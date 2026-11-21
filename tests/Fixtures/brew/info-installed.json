@@ -1,0 +1,264 @@
+{
+  "formulae": [
+    {
+      "name": "subversion",
+      "full_name": "subversion",
+      "tap": "homebrew/core",
+      "oldnames": [],
+      "aliases": [
+        "svn"
+      ],
+      "deprecated": false,
+      "deprecation_date": null,
+      "deprecation_reason": null,
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null,
+      "installed": [
+        {
+          "version": "1.0",
+          "installed_as_dependency": false,
+          "installed_on_request": true,
+          "runtime_dependencies": [
+            {
+              "full_name": "apr",
+              "version": "1.0",
+              "declared_directly": true
+            },
+            {
+              "full_name": "utf8proc",
+              "version": "1.0",
+              "declared_directly": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "apr",
+      "full_name": "apr",
+      "tap": "homebrew/core",
+      "oldnames": [],
+      "aliases": [],
+      "deprecated": false,
+      "deprecation_date": null,
+      "deprecation_reason": null,
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null,
+      "installed": [
+        {
+          "version": "1.0",
+          "installed_as_dependency": true,
+          "installed_on_request": false,
+          "runtime_dependencies": []
+        }
+      ]
+    },
+    {
+      "name": "utf8proc",
+      "full_name": "utf8proc",
+      "tap": "homebrew/core",
+      "oldnames": [],
+      "aliases": [],
+      "deprecated": false,
+      "deprecation_date": null,
+      "deprecation_reason": null,
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null,
+      "installed": [
+        {
+          "version": "1.0",
+          "installed_as_dependency": true,
+          "installed_on_request": false,
+          "runtime_dependencies": []
+        }
+      ]
+    },
+    {
+      "name": "jq",
+      "full_name": "jq",
+      "tap": "homebrew/core",
+      "oldnames": [],
+      "aliases": [],
+      "deprecated": false,
+      "deprecation_date": null,
+      "deprecation_reason": null,
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null,
+      "installed": [
+        {
+          "version": "1.7.1",
+          "installed_as_dependency": false,
+          "installed_on_request": true,
+          "runtime_dependencies": []
+        }
+      ]
+    },
+    {
+      "name": "youtube-dl",
+      "full_name": "youtube-dl",
+      "tap": "homebrew/core",
+      "oldnames": [],
+      "aliases": [],
+      "deprecated": true,
+      "deprecation_date": "2025-06-01",
+      "deprecation_reason": "unmaintained",
+      "deprecation_replacement_formula": "yt-dlp",
+      "deprecation_replacement_cask": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null,
+      "installed": [
+        {
+          "version": "1.0",
+          "installed_as_dependency": false,
+          "installed_on_request": true,
+          "runtime_dependencies": []
+        }
+      ]
+    },
+    {
+      "name": "iris",
+      "full_name": "versenilvis/iris/iris",
+      "tap": "versenilvis/iris",
+      "oldnames": [],
+      "aliases": [],
+      "deprecated": false,
+      "deprecation_date": null,
+      "deprecation_reason": null,
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null,
+      "installed": [
+        {
+          "version": "0.4.0",
+          "installed_as_dependency": false,
+          "installed_on_request": true,
+          "runtime_dependencies": []
+        }
+      ]
+    },
+    {
+      "name": "xz",
+      "full_name": "xz",
+      "tap": "homebrew/core",
+      "oldnames": [],
+      "aliases": [],
+      "deprecated": false,
+      "deprecation_date": null,
+      "deprecation_reason": null,
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null,
+      "installed": [
+        {
+          "version": "1.0",
+          "installed_as_dependency": false,
+          "installed_on_request": true,
+          "runtime_dependencies": []
+        }
+      ]
+    }
+  ],
+  "casks": [
+    {
+      "token": "zed",
+      "full_token": "zed",
+      "old_tokens": [],
+      "tap": "homebrew/cask",
+      "depends_on": {
+        "macos": {
+          ">=": [
+            "13"
+          ]
+        }
+      },
+      "installed": "0.190.5",
+      "deprecated": false,
+      "deprecation_date": null,
+      "deprecation_reason": null,
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null
+    },
+    {
+      "token": "old-app",
+      "full_token": "old-app",
+      "old_tokens": [],
+      "tap": "homebrew/cask",
+      "depends_on": {
+        "macos": {
+          ">=": [
+            "13"
+          ]
+        }
+      },
+      "installed": "1.0",
+      "deprecated": true,
+      "deprecation_date": null,
+      "deprecation_reason": "discontinued",
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "disabled": true,
+      "disable_date": "2025-09-01",
+      "disable_reason": "discontinued",
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null
+    },
+    {
+      "token": "xquartz-helper",
+      "full_token": "xquartz-helper",
+      "old_tokens": [],
+      "tap": "homebrew/cask",
+      "depends_on": {
+        "formula": [
+          "xz"
+        ]
+      },
+      "installed": "1.0",
+      "deprecated": false,
+      "deprecation_date": null,
+      "deprecation_reason": null,
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null
+    }
+  ]
+}

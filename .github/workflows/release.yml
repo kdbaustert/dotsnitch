@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  # The whole CI run, on the tag, so a release only goes out with binaries that passed it.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: ci
+    runs-on: macos-15
+    permissions:
+      contents: write
+    env:
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dotsnitch-*
+          path: dist
+          merge-multiple: true
+      - name: Write checksums.txt
+        working-directory: dist
+        run: |
+          cp ../scripts/install.sh .
+          shasum -a 256 dotsnitch-arm64 dotsnitch-x86_64 > checksums.txt
+          cat checksums.txt
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          dist/dotsnitch-arm64 dist/dotsnitch-x86_64 dist/checksums.txt dist/install.sh
+
+      # Skipped until the repo has a HOMEBREW_TAP_TOKEN secret that can push to the tap.
+      - name: Check out the tap
+        if: env.TAP_TOKEN != ''
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository_owner }}/homebrew-tap
+          token: ${{ env.TAP_TOKEN }}
+          path: tap
+      - name: Bump the formula
+        if: env.TAP_TOKEN != ''
+        working-directory: tap
+        run: |
+          mkdir -p Formula
+          ../scripts/formula.sh "$GITHUB_REF_NAME" ../dist/checksums.txt > Formula/dotsnitch.rb
+          git config user.name github-actions
+          git config user.email github-actions@users.noreply.github.com
+          git add Formula/dotsnitch.rb
+          git commit -m "dotsnitch $GITHUB_REF_NAME"
+          git push

@@ -1,0 +1,29 @@
+{
+  "formulae": [],
+  "casks": [
+    {
+      "token": "superduper",
+      "full_token": "superduper",
+      "old_tokens": [],
+      "tap": "homebrew/cask",
+      "depends_on": {
+        "macos": {
+          ">=": [
+            "13"
+          ]
+        }
+      },
+      "installed": null,
+      "deprecated": true,
+      "deprecation_date": null,
+      "deprecation_reason": "unmaintained",
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null
+    }
+  ]
+}

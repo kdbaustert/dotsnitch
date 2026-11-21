@@ -1,0 +1,2 @@
+# The sample dotfiles the binary tests run against. Nothing installs this formula.
+brew "dotsnitch-fixture-missing"

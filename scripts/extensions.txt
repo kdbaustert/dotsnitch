@@ -1,0 +1,14 @@
+# PHP extensions compiled into the standalone binary, one per line. build.sh and CI read this.
+# Required by dependencies (json and pcre are built into PHP)
+ctype
+fileinfo
+filter
+iconv
+mbstring
+tokenizer
+# Running the PHAR: box.json compresses it with GZ
+phar
+zlib
+# Laravel Prompts: spinner, signals and TTY detection
+pcntl
+posix

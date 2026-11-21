@@ -1,0 +1,55 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Support;
+
+use JsonException;
+use RuntimeException;
+
+final class JsonFile
+{
+    /**
+     * @return ?array<mixed> null when the file doesn't exist or is empty
+     *
+     * @throws RuntimeException when the file exists but isn't a JSON object or array
+     */
+    public static function read(string $path): ?array
+    {
+        if (! is_file($path)) {
+            return null;
+        }
+
+        $contents = (string) file_get_contents($path);
+
+        if (trim($contents) === '') {
+            return null;
+        }
+
+        try {
+            $data = json_decode($contents, true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException $e) {
+            throw new RuntimeException("Invalid JSON in {$path}: {$e->getMessage()}", previous: $e);
+        }
+
+        if (! is_array($data)) {
+            throw new RuntimeException("Expected a JSON object in {$path}");
+        }
+
+        return $data;
+    }
+
+    /**
+     * Written atomically and through symlinks (see AtomicFile), so a reader such as a shell prompt
+     * calling `status --quiet` never sees half a file, and a settings file kept in ~/dotfiles
+     * stays linked.
+     *
+     * @param  array<mixed>  $data
+     *
+     * @throws RuntimeException when the file can't be written
+     */
+    public static function write(string $path, array $data): void
+    {
+        AtomicFile::write($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
+    }
+}

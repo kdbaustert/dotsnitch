@@ -1,0 +1,73 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Support\ManifestEditor;
+
+beforeEach(function () {
+    $this->dir = sys_get_temp_dir().'/dotsnitch-test-'.bin2hex(random_bytes(4));
+    mkdir("{$this->dir}/repo", 0755, true);
+    $this->dir = realpath($this->dir);
+    $this->editor = new ManifestEditor("{$this->dir}/backups");
+});
+
+afterEach(function () {
+    exec('rm -rf '.escapeshellarg($this->dir));
+});
+
+it('backs up a file once, before its first change', function () {
+    $brewfile = "{$this->dir}/repo/Brewfile";
+    file_put_contents($brewfile, "brew \"jq\"\n");
+
+    $this->editor->edit($brewfile, fn (string $contents) => $contents."brew \"mpv\"\n");
+    $this->editor->edit($brewfile, fn (string $contents) => $contents."cask \"zed\"\n");
+
+    expect(file_get_contents($brewfile))->toBe("brew \"jq\"\nbrew \"mpv\"\ncask \"zed\"\n")
+        ->and(file_get_contents("{$this->dir}/backups{$brewfile}"))->toBe("brew \"jq\"\n")
+        ->and($this->editor->changed())->toBe([$brewfile]);
+});
+
+it('edits the real file behind a symlink and keeps its permissions', function () {
+    $real = "{$this->dir}/repo/Brewfile";
+    file_put_contents($real, "brew \"jq\"\n");
+    chmod($real, 0640);
+    symlink($real, "{$this->dir}/Brewfile");
+
+    $this->editor->edit("{$this->dir}/Brewfile", fn () => "brew \"mpv\"\n");
+
+    expect(is_link("{$this->dir}/Brewfile"))->toBeTrue()
+        ->and(file_get_contents($real))->toBe("brew \"mpv\"\n")
+        ->and(fileperms($real) & 0777)->toBe(0640)
+        ->and($this->editor->changed())->toBe([$real]);
+});
+
+it('creates a new file without a backup and leaves an unchanged one alone', function () {
+    $overlay = "{$this->dir}/repo/Brewfile.mac";
+    $brewfile = "{$this->dir}/repo/Brewfile";
+    file_put_contents($brewfile, "brew \"jq\"\n");
+
+    $this->editor->edit($overlay, fn (string $contents) => $contents."brew \"mpv\"\n");
+    $this->editor->edit($brewfile, fn (string $contents) => $contents);
+
+    expect(file_get_contents($overlay))->toBe("brew \"mpv\"\n")
+        ->and(is_dir("{$this->dir}/backups"))->toBeFalse()
+        ->and($this->editor->changed())->toBe([$overlay]);
+});
+
+it('moves a folder into backups, keeping its full path', function () {
+    mkdir("{$this->dir}/home/.config/nvim", recursive: true);
+    file_put_contents("{$this->dir}/home/.config/nvim/init.lua", 'vim.o.number = true');
+
+    $this->editor->moveToBackups("{$this->dir}/home/.config/nvim");
+
+    expect(file_exists("{$this->dir}/home/.config/nvim"))->toBeFalse()
+        ->and(file_get_contents("{$this->dir}/backups{$this->dir}/home/.config/nvim/init.lua"))->toBe('vim.o.number = true');
+});
+
+it("won't move over something already backed up", function () {
+    file_put_contents("{$this->dir}/.zshrc", 'new');
+    mkdir("{$this->dir}/backups{$this->dir}", recursive: true);
+    file_put_contents("{$this->dir}/backups{$this->dir}/.zshrc", 'old');
+
+    $this->editor->moveToBackups("{$this->dir}/.zshrc");
+})->throws(RuntimeException::class, 'already exists');

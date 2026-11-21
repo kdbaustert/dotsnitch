@@ -1,0 +1,7 @@
+1569813296  1Password for Safari  (8.12.46)
+ 937984704  Amphetamine           (5.3.2)
+ 409222199  Cyberduck             (9.6.0)
+1355679052  Dropover              (5.4.0)
+1592917505  Noir                  (2026.2.4)
+1549370672  Save to Raindrop.io   (5.8.3)
+1596706466  Speediness            (2.0.2)

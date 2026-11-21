@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.dotsnitch.status</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>{php}</string>
+		<string>{script}</string>
+		<string>status</string>
+		<string>--notify</string>
+		<string>--no-interaction</string>
+	</array>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>9</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>{home}/state/schedule.log</string>
+	<key>StandardErrorPath</key>
+	<string>{home}/state/schedule.log</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>{home}</string>
+		<key>SHELL</key>
+		<string>/bin/zsh</string>
+		<key>PATH</key>
+		<string>/usr/bin:/bin</string>
+		<key>DOTSNITCH_REPO</key>
+		<string>/Users/me/dotfiles</string>
+	</dict>
+</dict>
+</plist>

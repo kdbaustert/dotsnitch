@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # release.yml runs the same jobs on a tag before it publishes anything.
+  workflow_call:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-15-intel is the last Intel image GitHub offers, until macOS 15 retires in 2027.
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: pcntl, posix
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - run: composer lint
+      - run: composer test
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: pcntl, posix
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - name: Key the runtime cache on the pinned versions
+        id: pins
+        run: echo "hash=$(grep -E '^(SPC|PHP)_' scripts/build.sh | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      # Only what build.sh reuses: spc itself, its downloads, and the finished micro.sfx with the
+      # key it was built for. The compile tree is gigabytes and gets rebuilt on a miss anyway.
+      - uses: actions/cache@v4
+        id: spc
+        with:
+          path: |
+            builds/spc/spc
+            builds/spc/spc.version
+            builds/spc/micro.key
+            builds/spc/buildroot/bin/micro.sfx
+            builds/spc/downloads
+          key: spc-${{ matrix.arch }}-${{ steps.pins.outputs.hash }}-${{ hashFiles('scripts/extensions.txt') }}
+      - name: Install what static-php-cli compiles with
+        if: steps.spc.outputs.cache-hit != 'true'
+        run: brew install autoconf automake bison re2c
+      # Builds the binary, then runs the Binary suite against it with no PHP on PATH.
+      - run: composer build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOTSNITCH_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dotsnitch-${{ matrix.arch }}
+          path: builds/dotsnitch-${{ matrix.arch }}
+          if-no-files-found: error
+
+  # The uploaded binary on a runner that never built it, so nothing from the build leaks in.
+  binary:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: pcntl, posix
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - uses: actions/download-artifact@v4
+        with:
+          name: dotsnitch-${{ matrix.arch }}
+          path: builds
+      # Artifacts don't keep the executable bit.
+      - run: chmod +x builds/dotsnitch-${{ matrix.arch }}
+      - run: vendor/bin/pest --compact --testsuite=Binary
+        env:
+          DOTSNITCH_BINARY: builds/dotsnitch-${{ matrix.arch }}

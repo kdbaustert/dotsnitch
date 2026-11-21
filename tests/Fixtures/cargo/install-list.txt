@@ -1,0 +1,7 @@
+cargo-edit v0.13.0:
+    cargo-add
+    cargo-rm
+ripgrep v14.1.1:
+    rg
+tool v0.1.0 (git+https://github.com/example/tool#abc1234):
+    tool
