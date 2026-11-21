@@ -1,5 +1,8 @@
 # dotsnitch
 
+> [!WARNING]
+> dotsnitch is in early development. Commands, flags and the files it saves can change between releases, and some checks haven't been run on a real Mac yet. Try `--dry-run` before you let it change anything.
+
 dotsnitch tells you where your Mac and your dotfiles have drifted apart. It checks whether the packages listed in your dotfiles (a `Brewfile`, your global Composer packages and so on) match what's installed, and whether your config files are symlinked into place.
 
 When it finds a difference, it asks what you want to do about it. Nothing gets installed, removed or linked unless you picked it.
