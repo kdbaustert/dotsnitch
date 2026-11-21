@@ -55,7 +55,8 @@ final class ReportStore
     /**
      * Marks items the last saved scan didn't have as new and saves this scan over it. A second
      * save in the same run, such as the rescan after changes, compares with that same last scan,
-     * so it doesn't lose what was new.
+     * so it doesn't lose what was new. A last scan of another repo doesn't count, so switching
+     * --repo doesn't make every item new.
      *
      * A check that failed keeps what the last scan had for it, so the prompt count doesn't drop
      * and its next good scan still has something to compare with.
@@ -65,7 +66,8 @@ final class ReportStore
     public function save(string $repo, array $reports): SavedScan
     {
         if (! $this->baselineRead) {
-            $this->baseline = $this->readableLatest();
+            $latest = $this->readableLatest();
+            $this->baseline = $latest?->repo === $repo ? $latest : null;
             $this->baselineRead = true;
         }
 

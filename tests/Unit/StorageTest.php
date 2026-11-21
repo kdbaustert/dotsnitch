@@ -89,6 +89,22 @@ it('marks items the last scan lacked as new, only in checks it also ran', functi
         ->and($store->latest()->new)->toBe($saved->new);
 });
 
+it('marks nothing new when the last scan was of another repo', function () {
+    mkdir($this->dir);
+    file_put_contents("{$this->dir}/last-report.json", json_encode([
+        'scanned_at' => '2026-11-20T09:00:00-05:00',
+        'repo' => '/Users/me/old-dotfiles',
+        'checks' => ['brew' => []],
+    ]));
+
+    $saved = (new ReportStore($this->dir))->save('/Users/me/dotfiles', [
+        new DriftReport('brew', [new DriftItem('brew', DriftKind::Untracked, new Package('jq', 'formula'))]),
+    ]);
+
+    expect($saved->new)->toBe([])
+        ->and($saved->since)->toBeNull();
+});
+
 it('keeps what the last scan had for a check that failed this time', function () {
     mkdir($this->dir);
     file_put_contents("{$this->dir}/last-report.json", json_encode([
