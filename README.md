@@ -11,7 +11,7 @@ You don't have to tell it much. It follows the symlinks in your home folder back
 
 It runs on Apple Silicon and Intel Macs and works out the architecture, Homebrew prefix and tool paths each time. It's built with [Laravel Zero](https://laravel-zero.com), but a release is one file with PHP built in, so you don't need PHP installed.
 
-There's no release yet. The install command below starts working once the first tag is pushed, and CI hasn't run on GitHub yet either. Until then, run it from source (see [Development](#development)).
+There's no release yet. The install command below starts working once the first tag is pushed. Until then, run it from source (see [Development](#development)).
 
 ## What it does
 
@@ -339,4 +339,4 @@ For a pull request:
 
 ## License
 
-dotsnitch is released under the MIT License.
+dotsnitch is released under the [MIT License](LICENSE).
