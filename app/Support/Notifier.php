@@ -15,6 +15,10 @@ final class Notifier
 {
     private const TITLE = 'dotsnitch';
 
+    /**
+     * @param  Shell  $shell  runs terminal-notifier or osascript; tests pass a FakeShell
+     * @param  PathResolver  $paths  finds terminal-notifier on PATH
+     */
     public function __construct(
         private readonly Shell $shell,
         private readonly PathResolver $paths,

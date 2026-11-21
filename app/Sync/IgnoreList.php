@@ -14,6 +14,9 @@ final class IgnoreList
 {
     private const SETTING = 'ignore';
 
+    /**
+     * @param  UserSettings  $settings  holds the list in ~/.config/dotsnitch/config.json, so it's per Mac and never committed
+     */
     public function __construct(private readonly UserSettings $settings) {}
 
     /**

@@ -73,6 +73,9 @@ final class ScheduleCommand extends Command
         return self::SUCCESS;
     }
 
+    /**
+     * Turns the daily run off. Running it when nothing's set up isn't an error, it just says so.
+     */
     private function uninstall(LaunchAgent $agent): int
     {
         $this->line($agent->uninstall() ? 'The daily run is off.' : "The daily run wasn't set up.");

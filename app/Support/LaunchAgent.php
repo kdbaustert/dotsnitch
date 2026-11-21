@@ -168,11 +168,17 @@ final class LaunchAgent
         }
     }
 
+    /**
+     * ~/Library/LaunchAgents/<label>.plist, where launchd looks for it at login.
+     */
     public function plistPath(): string
     {
         return "{$this->home}/Library/LaunchAgents/".self::LABEL.'.plist';
     }
 
+    /**
+     * The current log, not the rotated one.
+     */
     public function logPath(): string
     {
         return $this->logPath;
@@ -272,6 +278,9 @@ final class LaunchAgent
         return array_slice(array_values(array_filter($lines, fn (string $line) => $line !== '')), -$count);
     }
 
+    /**
+     * Where rotateLog() moves a full log. Only one old log is kept.
+     */
     private function rotatedLogPath(): string
     {
         return "{$this->logPath}.1";
@@ -293,6 +302,9 @@ final class LaunchAgent
         return 'gui/'.posix_getuid();
     }
 
+    /**
+     * The agent's name as launchctl bootout and print want it, such as gui/501/<label>.
+     */
     private function service(): string
     {
         return $this->domain().'/'.self::LABEL;
