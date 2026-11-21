@@ -13,7 +13,7 @@ It's built with [Laravel Zero](https://laravel-zero.com) and runs on Apple Silic
 
 ## Status
 
-dotsnitch is being built in phases from `dotsnitch-plan.md`. All 12 phases are written, including the standalone build, daily use, CI and the release setup. CI and the release workflow haven't run on GitHub yet, and there's no release to install from until the first tag is pushed. Today it can:
+Everything is written, including the standalone build, daily use, CI and the release setup. CI and the release workflow haven't run on GitHub yet, and there's no release to install from until the first tag is pushed. Today it can:
 
 - detect this Mac's architecture, Rosetta, hostname, Homebrew prefix, Node install and tool paths (`config --machine`)
 - find your dotfiles directory and list the manifest it'll use for each check (`config`)
