@@ -1,7 +1,6 @@
 /vendor
 /.idea
-/.vscode/*
-!/.vscode/settings.json
+/.vscode
 .DS_Store
 /dotsnitch-plan.md
 /builds
