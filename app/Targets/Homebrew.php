@@ -5,12 +5,9 @@ declare(strict_types=1);
 namespace App\Targets;
 
 use App\Contracts\ManifestFormat;
-use App\Contracts\Shell;
 use App\Data\Package;
 use App\Data\ProcessResult;
 use App\Manifests\BrewfileFormat;
-use App\Support\ManifestEditor;
-use App\Support\PathResolver;
 use App\Sync\DriftItem;
 use App\Sync\DriftKind;
 use Illuminate\Support\Collection;
@@ -24,9 +21,6 @@ final class Homebrew extends PackageManagerTarget
 {
     /** Keeps brew from updating itself or printing hints in the middle of a scan. */
     public const ENVIRONMENT = ['HOMEBREW_NO_AUTO_UPDATE' => '1', 'HOMEBREW_NO_ENV_HINTS' => '1'];
-
-    /** `brew info --installed` takes about a second, longer on a cold cache. */
-    private const INFO_TIMEOUT = 120;
 
     public const UNKNOWN_NAME = "Homebrew doesn't know this name";
 
@@ -58,18 +52,7 @@ final class Homebrew extends PackageManagerTarget
     private array $notInstallable = [];
 
     /**
-     * The resolver finds brew even when it isn't on the PATH dotsnitch started with.
-     */
-    public function __construct(
-        Shell $shell,
-        private readonly PathResolver $paths,
-        ManifestEditor $editor,
-    ) {
-        parent::__construct($shell, $editor);
-    }
-
-    /**
-     * Used in --checks and under ignore.brew in config.json.
+     * The command's name, as typed in --checks=brew and saved under ignore.brew.
      */
     public function key(): string
     {
@@ -77,7 +60,7 @@ final class Homebrew extends PackageManagerTarget
     }
 
     /**
-     * As the check list and the report show it.
+     * The full name, where the key is the brew command.
      */
     public function label(): string
     {
@@ -241,7 +224,7 @@ final class Homebrew extends PackageManagerTarget
     }
 
     /**
-     * Keeps brew from updating itself or printing hints in the middle of a run.
+     * Installs and uninstalls run with the scan's variables, so brew doesn't stop to update itself.
      */
     protected function environment(): array
     {
@@ -283,7 +266,7 @@ final class Homebrew extends PackageManagerTarget
      */
     private function info(array $arguments): array
     {
-        $result = $this->brewRun(['info', '--json=v2', ...$arguments], self::INFO_TIMEOUT);
+        $result = $this->brewRun(['info', '--json=v2', ...$arguments]);
 
         if (! $result->successful()) {
             throw new RuntimeException('brew info failed: '.trim($result->errorOutput));
@@ -324,7 +307,7 @@ final class Homebrew extends PackageManagerTarget
         $unknown = [];
 
         while ($names !== []) {
-            $result = $this->brewRun(['info', '--json=v2', "--{$type}", ...$names], self::INFO_TIMEOUT);
+            $result = $this->brewRun(['info', '--json=v2', "--{$type}", ...$names]);
 
             if ($result->successful()) {
                 return [$this->keyedByAskedName($this->decodeInfo($result)[$this->plural($type)], $names), $unknown, null];
@@ -562,9 +545,9 @@ final class Homebrew extends PackageManagerTarget
     /**
      * @param  list<string>  $arguments
      */
-    private function brewRun(array $arguments, int $timeout = 120): ProcessResult
+    private function brewRun(array $arguments): ProcessResult
     {
-        return $this->shell->run([$this->brew(), ...$arguments], $timeout, self::ENVIRONMENT);
+        return $this->shell->run([$this->brew(), ...$arguments], self::LOOKUP_TIMEOUT, self::ENVIRONMENT);
     }
 
     /**

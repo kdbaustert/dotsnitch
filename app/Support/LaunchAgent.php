@@ -59,11 +59,7 @@ final class LaunchAgent
     public function install(string $at, string $repo): void
     {
         [$hour, $minute] = self::parseTime($at);
-        $logDirectory = dirname($this->logPath);
-
-        if (! is_dir($logDirectory) && ! mkdir($logDirectory, 0755, true) && ! is_dir($logDirectory)) {
-            throw new RuntimeException("Could not create {$logDirectory}");
-        }
+        AtomicFile::makeParentOf($this->logPath);
 
         AtomicFile::write($this->plistPath(), $this->plist([...SelfPath::command(), 'status', '--notify', '--no-interaction'], [
             'Hour' => $hour,

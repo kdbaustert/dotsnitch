@@ -15,7 +15,7 @@ use RuntimeException;
 final class BashArrayFormat implements ManifestFormat
 {
     /**
-     * The spec decides how an item splits into name and version.
+     * @param  PackageSpec  $spec  reads each array item as a name and a version
      */
     public function __construct(
         private readonly PackageSpec $spec,
@@ -41,7 +41,7 @@ final class BashArrayFormat implements ManifestFormat
     }
 
     /**
-     * Opens the script for edits inside its arrays.
+     * Returns the concrete edit, since read() goes through here and needs its hasArray().
      */
     public function edit(string $contents): BashArrayEdit
     {

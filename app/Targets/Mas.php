@@ -5,11 +5,8 @@ declare(strict_types=1);
 namespace App\Targets;
 
 use App\Contracts\ManifestFormat;
-use App\Contracts\Shell;
 use App\Data\Package;
 use App\Manifests\MasSpec;
-use App\Support\ManifestEditor;
-use App\Support\PathResolver;
 use App\Sync\DriftItem;
 use App\Sync\DriftKind;
 use App\Sync\DriftReport;
@@ -29,18 +26,7 @@ final class Mas extends PackageManagerTarget
     private array $titles = [];
 
     /**
-     * The resolver finds mas.
-     */
-    public function __construct(
-        Shell $shell,
-        private readonly PathResolver $paths,
-        ManifestEditor $editor,
-    ) {
-        parent::__construct($shell, $editor);
-    }
-
-    /**
-     * Used in --checks and under ignore.mas in config.json.
+     * The mas CLI's name, which its manifests share: mas.txt, Masfile, mas.sh.
      */
     public function key(): string
     {
@@ -48,7 +34,7 @@ final class Mas extends PackageManagerTarget
     }
 
     /**
-     * Shown in the report.
+     * The store's name, since mas is only the tool that reads it.
      */
     public function label(): string
     {
@@ -56,7 +42,7 @@ final class Mas extends PackageManagerTarget
     }
 
     /**
-     * True when mas is on the resolved PATH.
+     * False without the mas CLI, even though the App Store itself is always there.
      */
     public function isAvailable(): bool
     {
@@ -86,7 +72,7 @@ final class Mas extends PackageManagerTarget
     }
 
     /**
-     * A .sh reads its bash arrays; anything else is a list of ids.
+     * Builds a new MasSpec each time, since it carries the app names scan() just collected.
      */
     protected function format(string $manifest): ManifestFormat
     {
@@ -103,7 +89,7 @@ final class Mas extends PackageManagerTarget
     {
         $packages = collect();
 
-        foreach ($this->lines([$this->mas(), 'list']) as $line) {
+        foreach ($this->lines([$this->binary('mas'), 'list']) as $line) {
             if (preg_match(self::LIST_LINE, $line, $match)) {
                 $this->titles[$match[1]] = $match[2];
                 $packages->push(new Package($match[1], 'app', $match[3]));
@@ -130,7 +116,7 @@ final class Mas extends PackageManagerTarget
      */
     protected function installCommand(Package $package): array
     {
-        return [$this->mas(), 'install', $package->name];
+        return [$this->binary('mas'), 'install', $package->name];
     }
 
     /**
@@ -138,7 +124,7 @@ final class Mas extends PackageManagerTarget
      */
     protected function uninstallCommand(Package $package): array
     {
-        return ['/usr/bin/sudo', $this->mas(), 'uninstall', $package->name];
+        return ['/usr/bin/sudo', $this->binary('mas'), 'uninstall', $package->name];
     }
 
     /**
@@ -152,13 +138,5 @@ final class Mas extends PackageManagerTarget
             ->map(fn (Package $package) => new DriftItem($this->key(), $kind, $package, $this->titles[$package->name]))
             ->values()
             ->all();
-    }
-
-    /**
-     * @throws RuntimeException when mas isn't on PATH
-     */
-    private function mas(): string
-    {
-        return $this->paths->find('mas') ?? throw new RuntimeException('mas is not installed');
     }
 }

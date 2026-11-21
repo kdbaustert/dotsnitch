@@ -36,7 +36,7 @@ final class NodeSpec implements PackageSpec
     }
 
     /**
-     * The bare name.
+     * Just the name, scope and all, such as @vue/cli.
      */
     public function entry(Package $package): string
     {

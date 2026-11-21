@@ -17,7 +17,8 @@ final readonly class DriftReport
     ) {}
 
     /**
-     * True when the check found nothing to resolve.
+     * True with nothing left to resolve. Ignored items don't count, so "In sync (2 ignored)" is
+     * possible.
      */
     public function isInSync(): bool
     {

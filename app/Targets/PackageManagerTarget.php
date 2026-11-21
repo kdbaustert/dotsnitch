@@ -13,6 +13,7 @@ use App\Data\Package;
 use App\Manifests\BashArrayFormat;
 use App\Manifests\LineListFormat;
 use App\Support\ManifestEditor;
+use App\Support\PathResolver;
 use App\Sync\Action;
 use App\Sync\Decision;
 use App\Sync\DriftItem;
@@ -43,10 +44,12 @@ abstract class PackageManagerTarget implements SyncTarget
     private array $installedByKey = [];
 
     /**
+     * @param  PathResolver  $paths  finds a tool even when it isn't on the PATH dotsnitch started with
      * @param  ManifestEditor  $editor  backs up each manifest before its first edit in a run
      */
     public function __construct(
         protected readonly Shell $shell,
+        protected readonly PathResolver $paths,
         private readonly ManifestEditor $editor,
     ) {}
 
@@ -235,6 +238,16 @@ abstract class PackageManagerTarget implements SyncTarget
     }
 
     /**
+     * @return string the tool's full path, such as /opt/homebrew/bin/gh
+     *
+     * @throws RuntimeException when it isn't on PATH
+     */
+    protected function binary(string $name): string
+    {
+        return $this->paths->find($name) ?? throw new RuntimeException("{$name} is not installed");
+    }
+
+    /**
      * Runs a lookup and decodes the JSON it prints. npm ls exits 1 over something like a missing
      * peer dependency but still prints the whole list, so output that decodes counts.
      *
@@ -418,7 +431,7 @@ abstract class PackageManagerTarget implements SyncTarget
         $listing = array_values(array_filter($manifests, function (string $manifest) use ($package) {
             $edit = $this->format($manifest)->edit(is_file($manifest) ? (string) file_get_contents($manifest) : '');
 
-            return in_array(true, array_map(fn (Package $spelling) => $edit->remove($spelling), $this->spellingsOf($package)), true);
+            return array_any($this->spellingsOf($package), fn (Package $spelling) => $edit->lists($spelling));
         }));
 
         if ($listing === []) {

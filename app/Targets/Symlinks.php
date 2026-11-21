@@ -9,6 +9,7 @@ use App\Contracts\Shell;
 use App\Contracts\ShowsDiff;
 use App\Contracts\SyncTarget;
 use App\Data\Link;
+use App\Support\AtomicFile;
 use App\Support\DotfilesRepo;
 use App\Support\LinkMapBuilder;
 use App\Support\ManifestEditor;
@@ -52,7 +53,7 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
     ) {}
 
     /**
-     * Used in --checks and under ignore.symlinks in config.json.
+     * The only key that isn't a tool's name.
      */
     public function key(): string
     {
@@ -60,7 +61,7 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
     }
 
     /**
-     * Shown in prompts and tables.
+     * Says files, though a link can be a whole config folder.
      */
     public function label(): string
     {
@@ -233,7 +234,9 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
     }
 
     /**
-     * Builds an item for this check.
+     * Stamps the item with this check's key.
+     *
+     * @param  string  $detail  the short reason the report shows, such as "a real file is in the way"
      */
     private function item(DriftKind $kind, Link $link, string $detail): DriftItem
     {
@@ -250,11 +253,7 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
                 throw new RuntimeException("{$link->target} already exists");
             }
 
-            $folder = dirname($link->target);
-
-            if (! is_dir($folder) && ! mkdir($folder, 0755, true) && ! is_dir($folder)) {
-                throw new RuntimeException("Could not create {$folder}");
-            }
+            AtomicFile::makeParentOf($link->target);
 
             if (! symlink($link->source, $link->target)) {
                 throw new RuntimeException("Could not link {$link->target} to {$link->source}");
@@ -287,6 +286,8 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
             if (! rename($link->target, $link->source)) {
                 throw new RuntimeException("Could not move {$link->target} to {$link->source}");
             }
+
+            $this->editor->markChanged($link->source);
         });
     }
 

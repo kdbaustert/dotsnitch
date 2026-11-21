@@ -18,6 +18,11 @@ interface ManifestEdit
     public function add(Package $package): void;
 
     /**
+     * True when remove() would find an entry for this name.
+     */
+    public function lists(Package $package): bool;
+
+    /**
      * @return bool false when no entry for this name was found
      */
     public function remove(Package $package): bool;

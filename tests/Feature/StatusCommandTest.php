@@ -47,6 +47,14 @@ it('runs the last picked checks without asking and exits 0 with drift', function
     expect(app(ReportStore::class)->latest()->checks)->toBe(['other' => ['other:untracked:formula:jq']]);
 });
 
+it('skips anything in the saved checks that isn\'t a check key', function () {
+    $this->settings->set('checks', [['other'], null, 'other']);
+
+    $this->artisan('status', ['--repo' => "{$this->dir}/repo"])
+        ->expectsOutputToContain('1 out of sync')
+        ->assertExitCode(0);
+});
+
 it('marks what the last scan of that check didn\'t have', function () {
     previousScan($this->dir, []);
 

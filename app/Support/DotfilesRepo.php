@@ -51,7 +51,8 @@ final class DotfilesRepo
     }
 
     /**
-     * First hit wins, in the order the class describes.
+     * Walks the order in the class comment. A --repo= or DOTSNITCH_REPO that doesn't exist is an
+     * error, while a saved path that's gone just falls through to the next step.
      */
     private function locate(?string $option): string
     {

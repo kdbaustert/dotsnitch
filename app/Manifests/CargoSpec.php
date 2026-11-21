@@ -31,7 +31,7 @@ final class CargoSpec implements PackageSpec
     }
 
     /**
-     * The bare name.
+     * Just the name, such as ripgrep, whatever version is installed.
      */
     public function entry(Package $package): string
     {

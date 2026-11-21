@@ -25,19 +25,16 @@ final class Composer extends PackageManagerTarget
     private readonly ComposerSpec $spec;
 
     /**
-     * The resolver finds composer on your login PATH.
+     * One ComposerSpec serves both kinds of manifest, the composer.json and the plain list.
      */
-    public function __construct(
-        Shell $shell,
-        private readonly PathResolver $paths,
-        ManifestEditor $editor,
-    ) {
-        parent::__construct($shell, $editor);
+    public function __construct(Shell $shell, PathResolver $paths, ManifestEditor $editor)
+    {
+        parent::__construct($shell, $paths, $editor);
         $this->spec = new ComposerSpec;
     }
 
     /**
-     * Used in --checks and under ignore.composer in config.json.
+     * composer on its own. "global" is left to the label.
      */
     public function key(): string
     {
@@ -53,7 +50,8 @@ final class Composer extends PackageManagerTarget
     }
 
     /**
-     * True when composer is on the resolved PATH.
+     * False until composer itself is installed, even if dotfiles already linked its composer.json
+     * into place.
      */
     public function isAvailable(): bool
     {
@@ -83,7 +81,7 @@ final class Composer extends PackageManagerTarget
      */
     protected function installed(): Collection
     {
-        $show = $this->json([$this->composer(), 'global', 'show', '--direct', '--format=json']);
+        $show = $this->json([$this->binary('composer'), 'global', 'show', '--direct', '--format=json']);
 
         // With nothing installed Composer prints [] instead of {"installed": []}.
         return collect($show['installed'] ?? [])
@@ -97,7 +95,7 @@ final class Composer extends PackageManagerTarget
      */
     protected function installCommand(Package $package): array
     {
-        return [$this->composer(), 'global', 'require', $this->spec->argument($package)];
+        return [$this->binary('composer'), 'global', 'require', $this->spec->argument($package)];
     }
 
     /**
@@ -105,14 +103,6 @@ final class Composer extends PackageManagerTarget
      */
     protected function uninstallCommand(Package $package): array
     {
-        return [$this->composer(), 'global', 'remove', $package->name];
-    }
-
-    /**
-     * @throws RuntimeException when composer isn't on PATH
-     */
-    private function composer(): string
-    {
-        return $this->paths->find('composer') ?? throw new RuntimeException('Composer is not installed');
+        return [$this->binary('composer'), 'global', 'remove', $package->name];
     }
 }

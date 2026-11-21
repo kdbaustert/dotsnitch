@@ -21,7 +21,7 @@ final readonly class ManifestMatches
     ) {}
 
     /**
-     * True when the repo has no manifest at all for this check.
+     * True when no pattern matched a file in any of the three roles.
      */
     public function isEmpty(): bool
     {

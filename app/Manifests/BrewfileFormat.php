@@ -55,7 +55,7 @@ final class BrewfileFormat implements ManifestFormat
     }
 
     /**
-     * Opens the Brewfile text for line edits.
+     * Plain text edits with no brew involved, unlike read().
      */
     public function edit(string $contents): ManifestEdit
     {

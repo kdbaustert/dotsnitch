@@ -15,7 +15,7 @@ use RuntimeException;
 final class LineListFormat implements ManifestFormat
 {
     /**
-     * The spec decides how an entry splits into name and version.
+     * @param  PackageSpec  $spec  reads each entry on a line as a name and a version
      */
     public function __construct(
         private readonly PackageSpec $spec,
@@ -34,7 +34,7 @@ final class LineListFormat implements ManifestFormat
     }
 
     /**
-     * Opens the text for line edits.
+     * Also how read() gets its entries, so reading and editing agree on what a line holds.
      */
     public function edit(string $contents): LineListEdit
     {

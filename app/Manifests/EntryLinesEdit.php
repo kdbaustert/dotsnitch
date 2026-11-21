@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Manifests;
 
-use App\Contracts\ManifestEdit;
 use App\Contracts\PackageSpec;
 use App\Data\Package;
 use Illuminate\Support\Collection;
@@ -15,18 +14,13 @@ use RuntimeException;
  * optional quotes and an optional comment after it, gets edited. A line with two names is still
  * read, but left to the user to change.
  */
-abstract class EntryLinesEdit implements ManifestEdit
+abstract class EntryLinesEdit extends LineBasedEdit
 {
     /** Indent, opening quote, the entry, then a comment or nothing. A quoted entry can hold spaces. */
     private const ENTRY_LINE = '/^(\s*)(?|(["\'])([^"\'#]+)\2|()([^\s"\'#]+))(\s+#.*|\s*)$/';
 
     /** A quoted or bare word, once comments are gone. */
     private const WORD = '/"([^"]*)"|\'([^\']*)\'|([^\s"\']+)/';
-
-    /** @var list<string> */
-    protected array $lines;
-
-    private readonly bool $endsWithNewline;
 
     /**
      * @param  string  $contents  the whole file, empty for a new one
@@ -35,8 +29,7 @@ abstract class EntryLinesEdit implements ManifestEdit
         string $contents,
         private readonly PackageSpec $spec,
     ) {
-        $this->endsWithNewline = $contents === '' || str_ends_with($contents, "\n");
-        $this->lines = $contents === '' ? [] : explode("\n", $this->endsWithNewline ? substr($contents, 0, -1) : $contents);
+        parent::__construct($contents);
     }
 
     /**
@@ -74,22 +67,6 @@ abstract class EntryLinesEdit implements ManifestEdit
     }
 
     /**
-     * Only a line holding just that entry goes. A line with two names is left for you to edit.
-     */
-    public function remove(Package $package): bool
-    {
-        $found = $this->linesOf($package);
-
-        foreach ($found as $index) {
-            unset($this->lines[$index]);
-        }
-
-        $this->lines = array_values($this->lines);
-
-        return $found !== [];
-    }
-
-    /**
      * Keeps the old line's indent, quotes and comment. The old pin is dropped.
      */
     public function replace(Package $old, Package $new): bool
@@ -109,16 +86,6 @@ abstract class EntryLinesEdit implements ManifestEdit
         }
 
         return $found !== [];
-    }
-
-    /**
-     * Keeps the original's trailing newline, and gives a new file one.
-     */
-    public function contents(): string
-    {
-        $contents = implode("\n", $this->lines);
-
-        return $this->endsWithNewline && $this->lines !== [] ? "{$contents}\n" : $contents;
     }
 
     /**
@@ -153,11 +120,12 @@ abstract class EntryLinesEdit implements ManifestEdit
     }
 
     /**
-     * Matches by name, so `typescript@6` is found when removing typescript.
+     * Matches by name, so `typescript@6` is found when removing typescript. Only a line holding
+     * just that entry counts; a line with two names is left for you to edit.
      *
      * @return list<int>
      */
-    private function linesOf(Package $package): array
+    protected function linesOf(Package $package): array
     {
         $found = [];
 

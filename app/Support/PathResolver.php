@@ -136,10 +136,14 @@ final class PathResolver
         $brewOnPath = $this->findIn($this->splitPath($this->loginEnvironment()['PATH'] ?? ''), 'brew');
 
         if ($brewOnPath !== null) {
-            $result = $this->shell->run([$brewOnPath, '--prefix'], self::TOOL_TIMEOUT);
+            try {
+                $result = $this->shell->run([$brewOnPath, '--prefix'], self::TOOL_TIMEOUT);
 
-            if ($result->successful()) {
-                return trim($result->output);
+                if ($result->successful()) {
+                    return trim($result->output);
+                }
+            } catch (ProcessTimedOutException) {
+                $this->warnings[] = "`{$brewOnPath} --prefix` took over ".self::TOOL_TIMEOUT.'s; looked in the standard prefixes instead.';
             }
         }
 
@@ -172,7 +176,8 @@ final class PathResolver
     }
 
     /**
-     * @return ?string such as "Node 22.11.0 via nvm", null when node isn't installed
+     * @return ?string such as "Node 22.11.0 via nvm", null when node isn't installed. A node that
+     *                 fails or hangs on --version reads "Node (version unknown)".
      */
     public function nodeDescription(): ?string
     {
@@ -182,8 +187,13 @@ final class PathResolver
             return null;
         }
 
-        $result = $this->shell->run([$node, '--version'], self::TOOL_TIMEOUT, $this->homeEnvironment());
-        $version = ltrim(trim($result->output), 'v');
+        try {
+            $result = $this->shell->run([$node, '--version'], self::TOOL_TIMEOUT, $this->homeEnvironment());
+            $version = $result->successful() ? ltrim(trim($result->output), 'v') : '(version unknown)';
+        } catch (ProcessTimedOutException) {
+            $version = '(version unknown)';
+        }
+
         $manager = $this->nodeManager($node);
 
         return $manager === null ? "Node {$version}" : "Node {$version} via {$manager}";
@@ -281,7 +291,8 @@ final class PathResolver
      */
     private function toolBinDirs(array $environment): array
     {
-        $home = $environment['HOME'];
+        // The inherited fallback has no HOME when the process was started without one.
+        $home = $environment['HOME'] ?? '';
 
         $candidates = [
             $this->lastLineOf(['composer', 'global', 'config', 'bin-dir', '--absolute'], $environment),
@@ -332,6 +343,7 @@ final class PathResolver
 
             return null;
         }
+
         $lines = array_filter(array_map(trim(...), explode("\n", $result->output)));
 
         return $result->successful() && $lines !== [] ? end($lines) : null;

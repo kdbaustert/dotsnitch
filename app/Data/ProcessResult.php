@@ -17,7 +17,8 @@ final readonly class ProcessResult
     ) {}
 
     /**
-     * True only for exit code 0.
+     * Exit code 0 and nothing else. A caller that expects another code, such as diff's 1 for
+     * differences, reads exitCode itself.
      */
     public function successful(): bool
     {

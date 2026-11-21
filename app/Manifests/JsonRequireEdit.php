@@ -55,6 +55,15 @@ final class JsonRequireEdit implements ManifestEdit
     }
 
     /**
+     * Matches the name whatever its case. A missing or malformed section is just false here,
+     * where add() throws.
+     */
+    public function lists(Package $package): bool
+    {
+        return $this->keyOf($package) !== null;
+    }
+
+    /**
      * Matches the name whatever its case.
      */
     public function remove(Package $package): bool

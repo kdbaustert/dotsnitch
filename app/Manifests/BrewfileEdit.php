@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Manifests;
 
-use App\Contracts\ManifestEdit;
 use App\Data\Package;
 
 /**
@@ -12,27 +11,13 @@ use App\Data\Package;
  * quote style and any options or comment after the name. Anything built in Ruby is left to the
  * user.
  */
-final class BrewfileEdit implements ManifestEdit
+final class BrewfileEdit extends LineBasedEdit
 {
     /** Package type to its Brewfile directive, in the order the sections usually run. */
     private const DIRECTIVES = ['tap' => 'tap', 'formula' => 'brew', 'cask' => 'cask'];
 
     /** A top-level line of any Brewfile directive, such as `mas "Xcode", id: 497799835`. */
     private const ANY_DIRECTIVE = '/^([a-z_]+)\s+["\']/';
-
-    /** @var list<string> */
-    private array $lines;
-
-    private readonly bool $endsWithNewline;
-
-    /**
-     * @param  string  $contents  the whole Brewfile, empty for a new one
-     */
-    public function __construct(string $contents)
-    {
-        $this->endsWithNewline = $contents === '' || str_ends_with($contents, "\n");
-        $this->lines = $contents === '' ? [] : explode("\n", $this->endsWithNewline ? substr($contents, 0, -1) : $contents);
-    }
 
     /**
      * Goes after the last entry of the same type, or of the closest section before it. With no
@@ -46,22 +31,6 @@ final class BrewfileEdit implements ManifestEdit
 
         $line = self::DIRECTIVES[$package->type].' "'.$package->name.'"';
         array_splice($this->lines, $this->insertionPoint($package->type), 0, [$line]);
-    }
-
-    /**
-     * Drops every line that lists it, so a duplicate goes too.
-     */
-    public function remove(Package $package): bool
-    {
-        $found = $this->linesOf($package);
-
-        foreach ($found as $index) {
-            unset($this->lines[$index]);
-        }
-
-        $this->lines = array_values($this->lines);
-
-        return $found !== [];
     }
 
     /**
@@ -87,19 +56,9 @@ final class BrewfileEdit implements ManifestEdit
     }
 
     /**
-     * Keeps the original's trailing newline, and gives a new file one.
-     */
-    public function contents(): string
-    {
-        $contents = implode("\n", $this->lines);
-
-        return $this->endsWithNewline && $this->lines !== [] ? "{$contents}\n" : $contents;
-    }
-
-    /**
      * @return list<int> line indexes, including indented ones inside a Ruby block
      */
-    private function linesOf(Package $package): array
+    protected function linesOf(Package $package): array
     {
         return array_keys(preg_grep($this->patternFor($package), $this->lines));
     }

@@ -24,19 +24,16 @@ final class Uv extends PackageManagerTarget
     private readonly PythonSpec $spec;
 
     /**
-     * The resolver finds uv.
+     * The same PythonSpec pipx uses, since `uv tool install` takes the same requirements.
      */
-    public function __construct(
-        Shell $shell,
-        private readonly PathResolver $paths,
-        ManifestEditor $editor,
-    ) {
-        parent::__construct($shell, $editor);
+    public function __construct(Shell $shell, PathResolver $paths, ManifestEditor $editor)
+    {
+        parent::__construct($shell, $paths, $editor);
         $this->spec = new PythonSpec;
     }
 
     /**
-     * Used in --checks and under ignore.uv in config.json.
+     * Just uv, where the manifests are named uv-tools.
      */
     public function key(): string
     {
@@ -44,7 +41,7 @@ final class Uv extends PackageManagerTarget
     }
 
     /**
-     * Shown in the report.
+     * Lowercase like uv itself. Says tools, since only `uv tool install` packages are checked.
      */
     public function label(): string
     {
@@ -52,7 +49,8 @@ final class Uv extends PackageManagerTarget
     }
 
     /**
-     * True when uv is on the resolved PATH.
+     * Finds uv in ~/.local/bin, where its installer puts it, even when the login PATH leaves
+     * that out.
      */
     public function isAvailable(): bool
     {
@@ -68,7 +66,7 @@ final class Uv extends PackageManagerTarget
     }
 
     /**
-     * A .sh reads its bash arrays; anything else is a list of requirements.
+     * uv-tools.sh or the plain list. Entries are requirements such as "ruff>=0.6", as for pipx.
      */
     protected function format(string $manifest): ManifestFormat
     {
@@ -83,7 +81,7 @@ final class Uv extends PackageManagerTarget
      */
     protected function installed(): Collection
     {
-        return collect($this->lines([$this->uv(), 'tool', 'list']))
+        return collect($this->lines([$this->binary('uv'), 'tool', 'list']))
             ->map(fn (string $line) => preg_match(self::TOOL_LINE, $line, $match) ? new Package(PythonSpec::normalized($match[1]), 'package', $match[2]) : null)
             ->filter()
             ->values();
@@ -94,7 +92,7 @@ final class Uv extends PackageManagerTarget
      */
     protected function installCommand(Package $package): array
     {
-        return [$this->uv(), 'tool', 'install', $this->spec->argument($package)];
+        return [$this->binary('uv'), 'tool', 'install', $this->spec->argument($package)];
     }
 
     /**
@@ -102,14 +100,6 @@ final class Uv extends PackageManagerTarget
      */
     protected function uninstallCommand(Package $package): array
     {
-        return [$this->uv(), 'tool', 'uninstall', $package->name];
-    }
-
-    /**
-     * @throws RuntimeException when uv isn't on PATH
-     */
-    private function uv(): string
-    {
-        return $this->paths->find('uv') ?? throw new RuntimeException('uv is not installed');
+        return [$this->binary('uv'), 'tool', 'uninstall', $package->name];
     }
 }

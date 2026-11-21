@@ -22,7 +22,7 @@ final readonly class Check
     ) {}
 
     /**
-     * Same as the target's key.
+     * The target's key, which is what --checks and the saved selection hold.
      */
     public function key(): string
     {

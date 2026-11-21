@@ -20,65 +20,32 @@ use App\Targets\Homebrew;
 use Tests\Fakes\FakeShell;
 use Tests\TestCase;
 
-/*
-|--------------------------------------------------------------------------
-| Test Case
-|--------------------------------------------------------------------------
-|
-| The closure you provide to your test functions is always bound to a specific PHPUnit test
-| case class. By default, that class is "PHPUnit\Framework\TestCase". Of course, you may
-| need to change it using the "uses()" function to bind a different classes or traits.
-|
-*/
-
 uses(TestCase::class)->in('Feature');
 
-/*
-|--------------------------------------------------------------------------
-| Expectations
-|--------------------------------------------------------------------------
-|
-| When you're writing tests, you often need to check that values meet certain conditions. The
-| "expect()" function gives you access to a set of "expectations" methods that you can use
-| to assert different things. Of course, you may extend the Expectation API at any time.
-|
-*/
-
-expect()->extend('toBeOne', function () {
-    return $this->toBe(1);
-});
-
-/*
-|--------------------------------------------------------------------------
-| Functions
-|--------------------------------------------------------------------------
-|
-| While Pest is very powerful out-of-the-box, you may have some testing code specific to your
-| project that you don't want to repeat in every file. Here you can also expose helpers as
-| global functions to help you to reduce the number of lines of code in your test files.
-|
-*/
-
-function something(): void
-{
-    // ..
-}
-
 /**
- * A check that reads any Brewfile and either throws or reports one untracked package. Adding it
- * appends a line through the real ManifestEditor; uninstalling only records the call in $ran.
+ * A check that reads any Brewfile and either throws or reports jq, once per kind in $kinds. Adding
+ * it appends a line through the real ManifestEditor; uninstalling only records the call in $ran.
  */
 function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarget
 {
     return new class($key, $fails, $available) implements SyncTarget
     {
+        /** @var list<string> */
+        public array $ran = [];
+
+        /** @var list<string> */
+        public array $patterns = ['Brewfile'];
+
+        /** @var list<DriftKind> */
+        public array $kinds = [DriftKind::Untracked];
+
         /**
          * @param  bool  $fails  true makes scan() throw
          */
         public function __construct(private readonly string $key, private readonly bool $fails, private readonly bool $available) {}
 
         /**
-         * Whatever key the test passed in.
+         * The key the test asked for, which is how a failing fake takes Homebrew's place as brew.
          */
         public function key(): string
         {
@@ -94,7 +61,8 @@ function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarge
         }
 
         /**
-         * False only when the test wants a check that isn't installed.
+         * True unless the test made it with $available false, to stand in for a tool that isn't
+         * installed.
          */
         public function isAvailable(): bool
         {
@@ -118,7 +86,10 @@ function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarge
                 throw new RuntimeException('brew info failed: boom');
             }
 
-            return new DriftReport($this->key, [new DriftItem($this->key, DriftKind::Untracked, new Package('jq', 'formula'))]);
+            return new DriftReport($this->key, array_map(
+                fn (DriftKind $kind) => new DriftItem($this->key, $kind, new Package('jq', 'formula')),
+                $this->kinds,
+            ));
         }
 
         /**
@@ -144,12 +115,6 @@ function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarge
                 default => [],
             };
         }
-
-        /** @var list<string> */
-        public array $ran = [];
-
-        /** @var list<string> */
-        public array $patterns = ['Brewfile'];
     };
 }
 

@@ -24,19 +24,16 @@ final class Cargo extends PackageManagerTarget
     private readonly CargoSpec $spec;
 
     /**
-     * The resolver finds cargo.
+     * Keeps one CargoSpec for reading manifests and for the `cargo install` argument.
      */
-    public function __construct(
-        Shell $shell,
-        private readonly PathResolver $paths,
-        ManifestEditor $editor,
-    ) {
-        parent::__construct($shell, $editor);
+    public function __construct(Shell $shell, PathResolver $paths, ManifestEditor $editor)
+    {
+        parent::__construct($shell, $paths, $editor);
         $this->spec = new CargoSpec;
     }
 
     /**
-     * Used in --checks and under ignore.cargo in config.json.
+     * The same word as the binary and as cargo.txt and cargo.sh, two of its manifests.
      */
     public function key(): string
     {
@@ -44,7 +41,7 @@ final class Cargo extends PackageManagerTarget
     }
 
     /**
-     * Shown in the report.
+     * Capitalized, the way Rust's docs write the tool's name.
      */
     public function label(): string
     {
@@ -52,7 +49,8 @@ final class Cargo extends PackageManagerTarget
     }
 
     /**
-     * True when cargo is on the resolved PATH.
+     * Finds a rustup install too. $CARGO_HOME/bin, or ~/.cargo/bin, is searched even when the
+     * login PATH leaves it out.
      */
     public function isAvailable(): bool
     {
@@ -68,7 +66,7 @@ final class Cargo extends PackageManagerTarget
     }
 
     /**
-     * A .sh reads its bash arrays; anything else is a list of crates.
+     * cargo.sh or a plain list. Both hold crates, pinned as name@version if at all.
      */
     protected function format(string $manifest): ManifestFormat
     {
@@ -82,7 +80,7 @@ final class Cargo extends PackageManagerTarget
      */
     protected function installed(): Collection
     {
-        return collect($this->lines([$this->cargo(), 'install', '--list']))
+        return collect($this->lines([$this->binary('cargo'), 'install', '--list']))
             ->map(fn (string $line) => preg_match(self::CRATE_LINE, $line, $match) ? new Package($match[1], 'crate', $match[2]) : null)
             ->filter()
             ->values();
@@ -93,7 +91,7 @@ final class Cargo extends PackageManagerTarget
      */
     protected function installCommand(Package $package): array
     {
-        return [$this->cargo(), 'install', $this->spec->argument($package)];
+        return [$this->binary('cargo'), 'install', $this->spec->argument($package)];
     }
 
     /**
@@ -101,14 +99,6 @@ final class Cargo extends PackageManagerTarget
      */
     protected function uninstallCommand(Package $package): array
     {
-        return [$this->cargo(), 'uninstall', $package->name];
-    }
-
-    /**
-     * @throws RuntimeException when cargo isn't on PATH
-     */
-    private function cargo(): string
-    {
-        return $this->paths->find('cargo') ?? throw new RuntimeException('cargo is not installed');
+        return [$this->binary('cargo'), 'uninstall', $package->name];
     }
 }

@@ -86,6 +86,19 @@ it('uses the brew found on PATH before probing the standard prefixes', function 
     expect($resolver->homebrewPrefix())->toBe("{$this->dir}/custom");
 });
 
+it('probes the standard prefixes when the brew on PATH hangs, and says so', function () {
+    $brew = makeExecutable("{$this->dir}/custom/bin/brew");
+    makeExecutable("{$this->dir}/opt/bin/brew");
+    $shell = (new FakeShell)
+        ->expect(LOGIN_COMMAND, loginOutput(['PATH' => "{$this->dir}/custom/bin"]))
+        ->expectTimeout([$brew, '--prefix']);
+
+    $resolver = new PathResolver($shell, $this->settings, $this->inherited, ["{$this->dir}/opt"]);
+
+    expect($resolver->homebrewPrefix())->toBe("{$this->dir}/opt")
+        ->and($resolver->warnings())->toBe(["`{$brew} --prefix` took over 15s; looked in the standard prefixes instead."]);
+});
+
 it('asks for a choice when both prefixes have brew and none is on PATH', function () {
     makeExecutable("{$this->dir}/opt/bin/brew");
     makeExecutable("{$this->dir}/local/bin/brew");
@@ -110,6 +123,16 @@ it('names the version manager that owns node', function () {
     $resolver = new PathResolver($shell, $this->settings, $this->inherited, []);
 
     expect($resolver->nodeDescription())->toBe('Node 22.11.0 via nvm');
+});
+
+it('says the version is unknown when node --version fails or hangs', function () {
+    $node = makeExecutable("{$this->dir}/home/.nvm/versions/node/v22.11.0/bin/node");
+    $login = loginOutput(['PATH' => dirname($node), 'HOME' => "{$this->dir}/home"]);
+    $failing = (new FakeShell)->expect(LOGIN_COMMAND, $login)->expect([$node, '--version'], exitCode: 1);
+    $hanging = (new FakeShell)->expect(LOGIN_COMMAND, $login)->expectTimeout([$node, '--version']);
+
+    expect((new PathResolver($failing, $this->settings, $this->inherited, []))->nodeDescription())->toBe('Node (version unknown) via nvm')
+        ->and((new PathResolver($hanging, $this->settings, $this->inherited, []))->nodeDescription())->toBe('Node (version unknown) via nvm');
 });
 
 it('drops per-process variables from the inherited fallback', function () {

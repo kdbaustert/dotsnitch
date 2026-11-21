@@ -81,7 +81,7 @@ final class StatusCommand extends Command
         }
 
         $checks = $this->allChecks();
-        $byKey = array_column(array_map(fn (Check $check) => [$check->key(), $check], $checks), 1, 0);
+        $byKey = $this->byKey($checks);
         $selected = $this->option('checks') === null
             ? array_values(array_intersect_key($byKey, array_flip($this->defaultCheckKeys($byKey, $settings))))
             : $this->checksFromOption($checks);
@@ -124,7 +124,7 @@ final class StatusCommand extends Command
         }
 
         // A failed check keeps what was posted for it before.
-        $finished = array_filter($reports, fn ($report) => $report instanceof DriftReport);
+        $finished = $this->finished($reports);
         $store->saveNotified([...$notified, ...array_map(
             fn (DriftReport $report) => array_map(fn (DriftItem $item) => $item->key(), $report->items),
             $finished,

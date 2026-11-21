@@ -21,11 +21,8 @@ final class AtomicFile
     public static function write(string $path, string $contents): void
     {
         $path = self::resolve($path);
+        self::makeParentOf($path);
         $directory = dirname($path);
-
-        if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
-            throw new RuntimeException("Could not create {$directory}");
-        }
 
         // tempnam() creates the file as 0600, which would stick after the rename.
         $mode = is_file($path) ? fileperms($path) & 0777 : 0666 & ~umask();
@@ -40,6 +37,20 @@ final class AtomicFile
             @unlink($temp);
 
             throw new RuntimeException("Could not write {$path}");
+        }
+    }
+
+    /**
+     * Creates the folder $path sits in, and any above it.
+     *
+     * @throws RuntimeException when it can't be created
+     */
+    public static function makeParentOf(string $path): void
+    {
+        $directory = dirname($path);
+
+        if (! is_dir($directory) && ! @mkdir($directory, 0755, true) && ! is_dir($directory)) {
+            throw new RuntimeException("Could not create {$directory}");
         }
     }
 

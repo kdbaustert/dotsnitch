@@ -24,19 +24,16 @@ final class Pipx extends PackageManagerTarget
     private array $venvs = [];
 
     /**
-     * The resolver finds pipx.
+     * PythonSpec is shared with Uv, since both take pip-style requirements.
      */
-    public function __construct(
-        Shell $shell,
-        private readonly PathResolver $paths,
-        ManifestEditor $editor,
-    ) {
-        parent::__construct($shell, $editor);
+    public function __construct(Shell $shell, PathResolver $paths, ManifestEditor $editor)
+    {
+        parent::__construct($shell, $paths, $editor);
         $this->spec = new PythonSpec;
     }
 
     /**
-     * Used in --checks and under ignore.pipx in config.json.
+     * Not shared with uv, though both install the same kind of tool.
      */
     public function key(): string
     {
@@ -44,7 +41,7 @@ final class Pipx extends PackageManagerTarget
     }
 
     /**
-     * Shown in the report.
+     * Lowercase, the way pipx writes its own name.
      */
     public function label(): string
     {
@@ -68,7 +65,7 @@ final class Pipx extends PackageManagerTarget
     }
 
     /**
-     * A .sh reads its bash arrays; anything else is a list of requirements.
+     * pipx.sh or a plain list. Both hold pip-style requirements such as black[d].
      */
     protected function format(string $manifest): ManifestFormat
     {
@@ -85,7 +82,7 @@ final class Pipx extends PackageManagerTarget
         $packages = collect();
         $this->venvs = [];
 
-        foreach ($this->json([$this->pipx(), 'list', '--json'])['venvs'] ?? [] as $venv => $data) {
+        foreach ($this->json([$this->binary('pipx'), 'list', '--json'])['venvs'] ?? [] as $venv => $data) {
             $main = $data['metadata']['main_package'] ?? [];
             $name = PythonSpec::normalized((string) ($main['package'] ?? $venv));
             $this->venvs[$name] = (string) $venv;
@@ -100,7 +97,7 @@ final class Pipx extends PackageManagerTarget
      */
     protected function installCommand(Package $package): array
     {
-        return [$this->pipx(), 'install', $this->spec->argument($package)];
+        return [$this->binary('pipx'), 'install', $this->spec->argument($package)];
     }
 
     /**
@@ -108,14 +105,6 @@ final class Pipx extends PackageManagerTarget
      */
     protected function uninstallCommand(Package $package): array
     {
-        return [$this->pipx(), 'uninstall', $this->venvs[$package->name] ?? $package->name];
-    }
-
-    /**
-     * @throws RuntimeException when pipx isn't on PATH
-     */
-    private function pipx(): string
-    {
-        return $this->paths->find('pipx') ?? throw new RuntimeException('pipx is not installed');
+        return [$this->binary('pipx'), 'uninstall', $this->venvs[$package->name] ?? $package->name];
     }
 }

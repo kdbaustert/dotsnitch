@@ -89,7 +89,7 @@ final class SyncCommand extends Command
      */
     private function askForChecks(array $checks, UserSettings $settings): array
     {
-        $byKey = array_column(array_map(fn (Check $check) => [$check->key(), $check], $checks), 1, 0);
+        $byKey = $this->byKey($checks);
 
         $keys = multiselect(
             'Which checks should run?',

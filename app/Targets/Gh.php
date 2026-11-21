@@ -21,19 +21,16 @@ final class Gh extends PackageManagerTarget
     private readonly GhSpec $spec;
 
     /**
-     * The resolver finds gh.
+     * Keeps one GhSpec. It leaves a pin out of the install argument, so installCommand() adds --pin.
      */
-    public function __construct(
-        Shell $shell,
-        private readonly PathResolver $paths,
-        ManifestEditor $editor,
-    ) {
-        parent::__construct($shell, $editor);
+    public function __construct(Shell $shell, PathResolver $paths, ManifestEditor $editor)
+    {
+        parent::__construct($shell, $paths, $editor);
         $this->spec = new GhSpec;
     }
 
     /**
-     * Used in --checks and under ignore.gh in config.json.
+     * Just gh, where the manifests are named gh-extensions.
      */
     public function key(): string
     {
@@ -41,7 +38,7 @@ final class Gh extends PackageManagerTarget
     }
 
     /**
-     * Shown in the report.
+     * Spelled out, since gh alone reads as the CLI and only its extensions are checked.
      */
     public function label(): string
     {
@@ -49,7 +46,7 @@ final class Gh extends PackageManagerTarget
     }
 
     /**
-     * True when gh is on the resolved PATH.
+     * True once gh is installed. Having no extensions yet is fine: the listed ones show as missing.
      */
     public function isAvailable(): bool
     {
@@ -65,7 +62,7 @@ final class Gh extends PackageManagerTarget
     }
 
     /**
-     * A .sh reads its bash arrays; anything else is a list of repos.
+     * gh-extensions.sh or the plain list. Both hold owner/repo, with @ref for a pin.
      */
     protected function format(string $manifest): ManifestFormat
     {
@@ -80,7 +77,7 @@ final class Gh extends PackageManagerTarget
      */
     protected function installed(): Collection
     {
-        return collect($this->lines([$this->gh(), 'extension', 'list']))->map(function (string $line) {
+        return collect($this->lines([$this->binary('gh'), 'extension', 'list']))->map(function (string $line) {
             [$command, $repo, $version] = array_pad(explode("\t", $line), 3, '');
 
             return new Package(
@@ -106,7 +103,7 @@ final class Gh extends PackageManagerTarget
     {
         $pin = $package->version === null ? [] : ['--pin', $package->version];
 
-        return [$this->gh(), 'extension', 'install', $this->spec->argument($package), ...$pin];
+        return [$this->binary('gh'), 'extension', 'install', $this->spec->argument($package), ...$pin];
     }
 
     /**
@@ -114,14 +111,6 @@ final class Gh extends PackageManagerTarget
      */
     protected function uninstallCommand(Package $package): array
     {
-        return [$this->gh(), 'extension', 'remove', $package->name];
-    }
-
-    /**
-     * @throws RuntimeException when gh isn't on PATH
-     */
-    private function gh(): string
-    {
-        return $this->paths->find('gh') ?? throw new RuntimeException('gh is not installed');
+        return [$this->binary('gh'), 'extension', 'remove', $package->name];
     }
 }

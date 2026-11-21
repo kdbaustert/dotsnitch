@@ -48,7 +48,7 @@ final class PythonSpec implements PackageSpec
     }
 
     /**
-     * The bare name.
+     * Just the normalized name, such as black. Extras are left off too, since they sit in the version.
      */
     public function entry(Package $package): string
     {

@@ -12,7 +12,7 @@ use App\Contracts\Shell;
 final class Machine
 {
     /**
-     * @param  Shell  $shell  runs sysctl and scutil; tests pass a FakeShell
+     * @param  Shell  $shell  runs sysctl and scutil
      */
     public function __construct(private readonly Shell $shell) {}
 

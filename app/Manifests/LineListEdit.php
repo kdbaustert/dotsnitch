@@ -20,7 +20,7 @@ final class LineListEdit extends EntryLinesEdit
     }
 
     /**
-     * Any line can hold an entry.
+     * Every line, since a plain list has no array to stay inside the way a setup script does.
      */
     protected function entryLineIndexes(): array
     {

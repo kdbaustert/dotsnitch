@@ -25,17 +25,14 @@ final class Npm extends PackageManagerTarget
     /**
      * The resolver finds npm on your login PATH, which may not be the node you use interactively.
      */
-    public function __construct(
-        Shell $shell,
-        private readonly PathResolver $paths,
-        ManifestEditor $editor,
-    ) {
-        parent::__construct($shell, $editor);
+    public function __construct(Shell $shell, PathResolver $paths, ManifestEditor $editor)
+    {
+        parent::__construct($shell, $paths, $editor);
         $this->spec = new NodeSpec;
     }
 
     /**
-     * Used in --checks and under ignore.npm in config.json.
+     * pnpm's globals are a separate check, so this key covers npm's only.
      */
     public function key(): string
     {
@@ -51,7 +48,7 @@ final class Npm extends PackageManagerTarget
     }
 
     /**
-     * True when npm is on the resolved PATH.
+     * Whichever npm the login PATH finds first, so the globals compared belong to that node.
      */
     public function isAvailable(): bool
     {
@@ -81,7 +78,7 @@ final class Npm extends PackageManagerTarget
      */
     protected function installed(): Collection
     {
-        $tree = $this->json([$this->npm(), 'ls', '-g', '--depth=0', '--json']);
+        $tree = $this->json([$this->binary('npm'), 'ls', '-g', '--depth=0', '--json']);
 
         return collect($tree['dependencies'] ?? [])
             ->map(fn (array $package, string $name) => new Package($name, 'package', $package['version'] ?? null))
@@ -94,7 +91,7 @@ final class Npm extends PackageManagerTarget
      */
     protected function trackedImplicitly(Collection $listed): array
     {
-        $binary = realpath($this->npm());
+        $binary = realpath($this->binary('npm'));
 
         if ($binary === false || ! preg_match('~.*/node_modules/((?:@[^/]+/)?[^/]+)~', $binary, $match)) {
             return [];
@@ -108,7 +105,7 @@ final class Npm extends PackageManagerTarget
      */
     protected function installCommand(Package $package): array
     {
-        return [$this->npm(), 'i', '-g', $this->spec->argument($package)];
+        return [$this->binary('npm'), 'i', '-g', $this->spec->argument($package)];
     }
 
     /**
@@ -116,14 +113,6 @@ final class Npm extends PackageManagerTarget
      */
     protected function uninstallCommand(Package $package): array
     {
-        return [$this->npm(), 'rm', '-g', $package->name];
-    }
-
-    /**
-     * @throws RuntimeException when npm isn't on PATH
-     */
-    private function npm(): string
-    {
-        return $this->paths->find('npm') ?? throw new RuntimeException('npm is not installed');
+        return [$this->binary('npm'), 'rm', '-g', $package->name];
     }
 }

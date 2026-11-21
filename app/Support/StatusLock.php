@@ -74,11 +74,7 @@ final class StatusLock
      */
     private function open()
     {
-        $directory = dirname($this->path);
-
-        if (! is_dir($directory) && ! @mkdir($directory, 0755, true) && ! is_dir($directory)) {
-            throw new RuntimeException("Could not create {$directory}");
-        }
+        AtomicFile::makeParentOf($this->path);
 
         return @fopen($this->path, 'c') ?: throw new RuntimeException("Could not open {$this->path}");
     }

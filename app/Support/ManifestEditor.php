@@ -54,6 +54,15 @@ final class ManifestEditor
     }
 
     /**
+     * Counts a file changed without edit(), such as one adopted into the repo, so changed()
+     * lists it too.
+     */
+    public function markChanged(string $path): void
+    {
+        $this->changed[AtomicFile::resolve($path)] = true;
+    }
+
+    /**
      * @return list<string> real paths, in the order they were first changed
      */
     public function changed(): array
@@ -78,7 +87,7 @@ final class ManifestEditor
     public function moveToBackups(string $path): void
     {
         $destination = $this->freeBackupOf($path);
-        $this->makeParentOf($destination);
+        AtomicFile::makeParentOf($destination);
 
         if (! rename($path, $destination)) {
             throw new RuntimeException("Could not move {$path} to {$destination}");
@@ -91,7 +100,7 @@ final class ManifestEditor
     private function backUp(string $path): void
     {
         $copy = $this->freeBackupOf($path);
-        $this->makeParentOf($copy);
+        AtomicFile::makeParentOf($copy);
 
         if (! copy($path, $copy)) {
             throw new RuntimeException("Could not back up {$path} to {$copy}");
@@ -113,17 +122,5 @@ final class ManifestEditor
         }
 
         return $candidate;
-    }
-
-    /**
-     * @throws RuntimeException when the folder can't be created
-     */
-    private function makeParentOf(string $path): void
-    {
-        $directory = dirname($path);
-
-        if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
-            throw new RuntimeException("Could not create {$directory}");
-        }
     }
 }

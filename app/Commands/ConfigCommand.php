@@ -21,7 +21,7 @@ final class ConfigCommand extends Command
 {
     use ChoosesHomebrew;
 
-    /** Binaries the checks will need, in the order the plan lists the checks. */
+    /** Binaries the checks will need, in the order config/targets.php lists the checks. */
     private const BINARIES = ['brew', 'mas', 'composer', 'npm', 'pnpm', 'gh', 'pipx', 'uv', 'cargo', 'node', 'php'];
 
     protected $signature = 'config

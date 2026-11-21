@@ -36,7 +36,7 @@ final class ComposerSpec implements PackageSpec
     }
 
     /**
-     * The bare name.
+     * Just vendor/name, such as laravel/installer.
      */
     public function entry(Package $package): string
     {

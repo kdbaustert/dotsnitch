@@ -37,7 +37,7 @@ final class GhSpec implements PackageSpec
     }
 
     /**
-     * The bare owner/repo.
+     * Just owner/repo, such as dlvhdr/gh-dash, with no @ref.
      */
     public function entry(Package $package): string
     {

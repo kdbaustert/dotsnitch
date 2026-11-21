@@ -8,6 +8,7 @@ use App\Support\ManifestEditor;
 use App\Support\PathResolver;
 use App\Support\StatusLock;
 use App\Support\UserSettings;
+use App\Sync\DriftKind;
 use App\Sync\ReportStore;
 use App\Targets\Homebrew;
 use App\Targets\Symlinks;
@@ -145,14 +146,29 @@ it('drops an uninstall when the second confirm says no', function () {
     expect($other->ran)->toBe([]);
 });
 
-it('offers to commit the manifests it changed when the repo is a git checkout', function () {
+it('keeps a choice for a package when its other item is skipped', function () {
+    onlyOtherCheck()->kinds = [DriftKind::Untracked, DriftKind::Deprecated];
+    answerWithQuestions();
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other'])
+        ->expectsQuestion('How do you want to resolve it?', 'each')
+        ->expectsQuestion('Other, untracked: formula:jq', 'add')
+        ->expectsQuestion('Other, deprecated: formula:jq', 'skip')
+        ->expectsQuestion('Add Other items to which file?', 'Brewfile')
+        ->expectsConfirmation('Apply these changes?', 'yes')
+        ->assertExitCode(0);
+
+    expect(file_get_contents("{$this->dir}/repo/Brewfile"))->toBe("brew \"jq\"\n");
+});
+
+it('offers to commit the manifests it changed when the repo is inside a git checkout', function () {
     onlyOtherCheck();
     answerWithQuestions();
-    mkdir("{$this->dir}/repo/.git");
     file_put_contents("{$this->dir}/brew/bin/git", "#!/bin/sh\n");
     chmod("{$this->dir}/brew/bin/git", 0755);
     $git = ["{$this->dir}/brew/bin/git", '-C', realpath("{$this->dir}/repo")];
     $shell = (new FakeShell)
+        ->expect([...$git, 'rev-parse', '--is-inside-work-tree'], "true\n")
         ->expect([...$git, 'diff', '--stat', '--', 'Brewfile'], " Brewfile | 1 +\n")
         ->expect([...$git, 'add', '--', 'Brewfile'])
         ->expect([...$git, 'commit', '-m', 'dotsnitch: add jq', '--', 'Brewfile']);
@@ -167,8 +183,57 @@ it('offers to commit the manifests it changed when the repo is a git checkout', 
         ->expectsConfirmation('Commit these changes to your dotfiles?', 'yes')
         ->assertExitCode(0);
 
-    expect(array_map(fn (array $command) => $command[3], $shell->ran()))->toBe(['diff', 'add', 'commit'])
+    expect(array_map(fn (array $command) => $command[3], $shell->ran()))->toBe(['rev-parse', 'diff', 'add', 'commit'])
         ->and(file_get_contents("{$this->dir}/repo/Brewfile"))->toBe("brew \"jq\"\n");
+});
+
+it("doesn't offer a commit when the repo isn't in a git checkout", function () {
+    onlyOtherCheck();
+    answerWithQuestions();
+    file_put_contents("{$this->dir}/brew/bin/git", "#!/bin/sh\n");
+    chmod("{$this->dir}/brew/bin/git", 0755);
+    $git = ["{$this->dir}/brew/bin/git", '-C', realpath("{$this->dir}/repo")];
+    $shell = (new FakeShell)->expect([...$git, 'rev-parse', '--is-inside-work-tree'], exitCode: 128);
+    $this->app->instance(Shell::class, $shell);
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other'])
+        ->expectsQuestion('How do you want to resolve it?', 'review')
+        ->expectsQuestion('Pick the untracked Other items to add to dotfiles', ['formula:jq'])
+        ->expectsQuestion('Add Other items to which file?', 'Brewfile')
+        ->expectsConfirmation('Apply these changes?', 'yes')
+        ->assertExitCode(0);
+
+    expect($shell->ran())->toHaveCount(1);
+});
+
+it('offers to commit a file it adopted into the repo', function () {
+    $home = realpath($this->dir);
+    $repo = "{$home}/repo";
+    file_put_contents("{$repo}/install.conf.yaml", "- link:\n    ~/.zshrc: .zshrc\n");
+    file_put_contents("{$repo}/.zshrc", "repo\n");
+    file_put_contents("{$home}/.zshrc", "home\n");
+    file_put_contents("{$this->dir}/brew/bin/git", "#!/bin/sh\n");
+    chmod("{$this->dir}/brew/bin/git", 0755);
+    $git = ["{$this->dir}/brew/bin/git", '-C', $repo];
+    $shell = (new FakeShell)
+        ->expect([...$git, 'rev-parse', '--is-inside-work-tree'], "true\n")
+        ->expect([...$git, 'diff', '--stat', '--', '.zshrc'], " .zshrc | 2 +-\n")
+        ->expect([...$git, 'add', '--', '.zshrc'])
+        ->expect([...$git, 'commit', '-m', 'dotsnitch: adopt .zshrc', '--', '.zshrc']);
+    $this->app->instance(Shell::class, $shell);
+    $this->app->instance(Symlinks::class, new Symlinks(app(DotfilesRepo::class), $shell, app(ManifestEditor::class), ['HOME' => $home]));
+    answerWithQuestions();
+
+    $this->artisan('sync', ['--repo' => $repo, '--checks' => 'symlinks'])
+        ->expectsQuestion('How do you want to resolve it?', 'each')
+        ->expectsQuestion("Symlinked config files, conflict: {$home}/.zshrc", 'adopt')
+        ->expectsConfirmation('Apply these changes?', 'yes')
+        ->expectsConfirmation('Commit these changes to your dotfiles?', 'yes')
+        ->assertExitCode(0);
+
+    expect(array_map(fn (array $command) => $command[3], $shell->ran()))->toBe(['rev-parse', 'diff', 'add', 'commit'])
+        ->and(file_get_contents("{$repo}/.zshrc"))->toBe("home\n")
+        ->and(readlink("{$home}/.zshrc"))->toBe("{$repo}/.zshrc");
 });
 
 it('prints the diff for Show diff and asks again', function () {

@@ -30,17 +30,14 @@ final class Pnpm extends PackageManagerTarget
     /**
      * The resolver finds pnpm and tells whether its bin dir is on your login PATH.
      */
-    public function __construct(
-        Shell $shell,
-        private readonly PathResolver $paths,
-        ManifestEditor $editor,
-    ) {
-        parent::__construct($shell, $editor);
+    public function __construct(Shell $shell, PathResolver $paths, ManifestEditor $editor)
+    {
+        parent::__construct($shell, $paths, $editor);
         $this->spec = new NodeSpec;
     }
 
     /**
-     * Used in --checks and under ignore.pnpm in config.json.
+     * Its own key, so its manifests and ignore list stay apart from npm's.
      */
     public function key(): string
     {
@@ -56,7 +53,7 @@ final class Pnpm extends PackageManagerTarget
     }
 
     /**
-     * True when pnpm is on the resolved PATH.
+     * Only asks whether pnpm exists. A global bin dir that's off your PATH gets a hint during the scan.
      */
     public function isAvailable(): bool
     {
@@ -72,7 +69,7 @@ final class Pnpm extends PackageManagerTarget
     }
 
     /**
-     * A .sh reads its bash arrays; anything else is a list of names.
+     * No package.json here, unlike npm. pnpm's globals sit in a plain list or in pnpm.sh's arrays.
      */
     protected function format(string $manifest): ManifestFormat
     {
@@ -90,7 +87,7 @@ final class Pnpm extends PackageManagerTarget
         $packages = collect();
         $this->groups = [];
 
-        foreach ($this->json([$this->pnpm(), 'list', '-g', '--json']) as $project) {
+        foreach ($this->json([$this->binary('pnpm'), 'list', '-g', '--json']) as $project) {
             foreach ($project['dependencies'] ?? [] as $name => $package) {
                 $packages->push(new Package($name, 'package', $package['version'] ?? null));
                 $group = strstr($package['path'] ?? '', '/node_modules/', true);
@@ -130,7 +127,7 @@ final class Pnpm extends PackageManagerTarget
      */
     protected function installCommand(Package $package): array
     {
-        return [$this->pnpm(), 'add', '-g', $this->spec->argument($package)];
+        return [$this->binary('pnpm'), 'add', '-g', $this->spec->argument($package)];
     }
 
     /**
@@ -138,7 +135,7 @@ final class Pnpm extends PackageManagerTarget
      */
     protected function uninstallCommand(Package $package): array
     {
-        return [$this->pnpm(), 'remove', '-g', $package->name];
+        return [$this->binary('pnpm'), 'remove', '-g', $package->name];
     }
 
     /**
@@ -148,7 +145,7 @@ final class Pnpm extends PackageManagerTarget
      */
     private function hintAtSetup(callable $log): void
     {
-        $result = $this->shell->run([$this->pnpm(), 'bin', '-g'], self::LOOKUP_TIMEOUT);
+        $result = $this->shell->run([$this->binary('pnpm'), 'bin', '-g'], self::LOOKUP_TIMEOUT);
         $bin = trim($result->output);
 
         if (! $result->successful() || $bin === '') {
@@ -156,13 +153,5 @@ final class Pnpm extends PackageManagerTarget
         } elseif (! $this->paths->onLoginPath($bin)) {
             $log("pnpm's bin dir {$bin} isn't on your PATH. Run `pnpm setup`, then open a new terminal.");
         }
-    }
-
-    /**
-     * @throws RuntimeException when pnpm isn't on PATH
-     */
-    private function pnpm(): string
-    {
-        return $this->paths->find('pnpm') ?? throw new RuntimeException('pnpm is not installed');
     }
 }

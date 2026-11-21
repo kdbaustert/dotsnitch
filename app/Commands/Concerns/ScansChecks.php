@@ -95,8 +95,17 @@ trait ScansChecks
     }
 
     /**
+     * @param  list<Check>  $checks
+     * @return array<string, Check>
+     */
+    private function byKey(array $checks): array
+    {
+        return array_column(array_map(fn (Check $check) => [$check->key(), $check], $checks), 1, 0);
+    }
+
+    /**
      * The checks sync ran last time that are still installed, or every ready check before the
-     * first pick.
+     * first pick. config.json is edited by hand, so anything in the list that isn't a key is dropped.
      *
      * @param  array<string, Check>  $byKey
      * @return list<string> check keys
@@ -106,7 +115,7 @@ trait ScansChecks
         $saved = $settings->get(self::SELECTION_SETTING);
 
         return is_array($saved)
-            ? array_values(array_filter($saved, fn ($key) => ($byKey[$key] ?? null)?->available))
+            ? array_values(array_filter($saved, fn ($key) => is_string($key) && ($byKey[$key] ?? null)?->available))
             : array_keys(array_filter($byKey, fn (Check $check) => $check->isReady()));
     }
 
@@ -214,7 +223,7 @@ trait ScansChecks
             array_values($this->checksByKey),
         ));
 
-        $finished = array_filter($reports, fn ($report) => $report instanceof DriftReport);
+        $finished = $this->finished($reports);
         $items = $this->itemsOf($reports);
 
         if ($items !== []) {
@@ -254,9 +263,16 @@ trait ScansChecks
      */
     private function itemsOf(array $reports): array
     {
-        $finished = array_filter($reports, fn ($report) => $report instanceof DriftReport);
+        return array_merge(...array_map(fn (DriftReport $report) => $report->items, array_values($this->finished($reports))));
+    }
 
-        return array_merge(...array_map(fn (DriftReport $report) => $report->items, array_values($finished)));
+    /**
+     * @param  array<string, DriftReport|RuntimeException>  $reports
+     * @return array<string, DriftReport> without the checks that failed
+     */
+    private function finished(array $reports): array
+    {
+        return array_filter($reports, fn ($report) => $report instanceof DriftReport);
     }
 
     /**

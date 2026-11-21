@@ -8,6 +8,7 @@ use App\Contracts\Shell;
 use App\Contracts\ShowsDiff;
 use App\Contracts\SyncTarget;
 use App\Data\Check;
+use App\Data\Link;
 use App\Support\ManifestEditor;
 use App\Support\Manifests;
 use App\Support\PathResolver;
@@ -111,7 +112,7 @@ trait ResolvesDrift
 
     /**
      * Leaves out failed checks and items with nothing to offer but Skip, such as version
-     * mismatches before Phase 6.
+     * mismatches.
      *
      * @param  array<string, DriftReport|RuntimeException>  $reports
      * @return list<DriftItem>
@@ -234,7 +235,8 @@ trait ResolvesDrift
     }
 
     /**
-     * The select for one item in decideEach().
+     * The question names the check, the kind and the item, and the item's detail goes in the
+     * hint. The suggestion starts selected.
      */
     private function decideOne(DriftItem $item): Action
     {
@@ -269,7 +271,7 @@ trait ResolvesDrift
 
     /**
      * Drops skips. A package can show up twice, such as missing and deprecated, so the later
-     * choice for it wins.
+     * choice that isn't a skip wins.
      *
      * @param  list<Decision>  $decisions
      * @return list<Decision>
@@ -279,11 +281,8 @@ trait ResolvesDrift
         $kept = [];
 
         foreach ($decisions as $decision) {
-            $key = "{$decision->item->check}:{$decision->item->subject->key()}";
-            unset($kept[$key]);
-
             if ($decision->action !== Action::Skip) {
-                $kept[$key] = $decision;
+                $kept["{$decision->item->check}:{$decision->item->subject->key()}"] = $decision;
             }
         }
 
@@ -489,8 +488,8 @@ trait ResolvesDrift
     }
 
     /**
-     * When the repo is a git checkout, shows what changed in it and offers to commit just those
-     * files. Defaults to no.
+     * When the repo is inside a git checkout, shows what changed in it and offers to commit just
+     * those files. Defaults to no.
      *
      * @param  list<Change>  $applied
      */
@@ -507,11 +506,17 @@ trait ResolvesDrift
 
         $git = $this->laravel->make(PathResolver::class)->find('git');
 
-        if ($files === [] || $git === null || ! file_exists("{$root}/.git")) {
+        if ($files === [] || $git === null) {
             return;
         }
 
         $shell = $this->laravel->make(Shell::class);
+
+        // Asks git, since the dotfiles can be a folder inside a bigger checkout with no .git of its own.
+        if (! $shell->run([$git, '-C', $root, 'rev-parse', '--is-inside-work-tree'])->successful()) {
+            return;
+        }
+
         $this->line(rtrim($shell->run([$git, '-C', $root, 'diff', '--stat', '--', ...$files])->output));
 
         if (! confirm('Commit these changes to your dotfiles?', default: false, hint: $this->commitMessage($applied))) {
@@ -530,20 +535,26 @@ trait ResolvesDrift
     }
 
     /**
-     * Such as "dotsnitch: add jq, remove mpv, replace youtube-dl".
+     * Such as "dotsnitch: add jq, remove mpv, replace youtube-dl, adopt .zshrc".
      *
      * @param  list<Change>  $applied
      */
     private function commitMessage(array $applied): string
     {
-        $verbs = [Action::AddToManifest->value => 'add', Action::RemoveFromManifest->value => 'remove', Action::Replace->value => 'replace'];
+        $verbs = [
+            Action::AddToManifest->value => 'add',
+            Action::RemoveFromManifest->value => 'remove',
+            Action::Replace->value => 'replace',
+            Action::Adopt->value => 'adopt',
+        ];
         $parts = [];
 
         foreach ($applied as $change) {
             $verb = $verbs[$change->decision->action->value] ?? null;
+            $subject = $change->decision->item->subject;
 
             if ($verb !== null) {
-                $parts[] = "{$verb} {$change->decision->item->subject->name}";
+                $parts[] = $verb.' '.($subject instanceof Link ? basename($subject->source) : $subject->name);
             }
         }
 
@@ -587,7 +598,7 @@ trait ResolvesDrift
     }
 
     /**
-     * The check that reported the item.
+     * Looked up among the checks this run scanned, so the item has to come from one of its reports.
      */
     private function targetOf(DriftItem $item): SyncTarget
     {
