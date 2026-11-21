@@ -32,7 +32,13 @@ trap 'rm -rf "$stage"' EXIT
 mkdir -p "$spc_dir"
 
 echo "==> Copying the source without dev packages"
-git -C "$root" ls-files -z -co --exclude-standard | rsync -a --from0 --files-from=- "$root/" "$stage/"
+# Untracked files come along so a local build has new files you haven't added yet. A deleted
+# file git still tracks is left out, since rsync stops at a name it can't find.
+git -C "$root" ls-files -z -co --exclude-standard |
+    while IFS= read -r -d '' file; do
+        if [[ -e "$root/$file" ]]; then printf '%s\0' "$file"; fi
+    done |
+    rsync -a --from0 --files-from=- "$root/" "$stage/"
 composer install --working-dir="$stage" --no-dev --optimize-autoloader --no-interaction --quiet
 
 echo "==> Building the PHAR"
