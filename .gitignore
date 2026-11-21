@@ -2,8 +2,6 @@
 /.idea
 /.vscode/*
 !/.vscode/settings.json
-/.vagrant
-.phpunit.result.cache
 .DS_Store
 /dotsnitch-plan.md
 /builds
