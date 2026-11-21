@@ -20,7 +20,8 @@ if [ "$(uname -s)" != Darwin ]; then
 fi
 
 # A shell under Rosetta says x86_64, but the Mac is Apple Silicon and dotsnitch has to see that.
-if [ "$(sysctl -in hw.optional.arm64 2>/dev/null)" = 1 ]; then
+# sysctl lives in /usr/sbin, which a trimmed PATH can leave out, and then this would pick Intel.
+if [ "$(/usr/sbin/sysctl -in hw.optional.arm64 2>/dev/null)" = 1 ]; then
     asset=dotsnitch-arm64
 else
     asset=dotsnitch-x86_64

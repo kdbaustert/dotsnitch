@@ -28,7 +28,7 @@ afterEach(function () {
 
 /**
  * Runs the installer with a bare environment, reading the release from $home/release. PATH has
- * $home/bin on it but not $home/.local/bin.
+ * $home/bin on it but not $home/.local/bin, and leaves out /usr/sbin like a trimmed PATH can.
  *
  * @param  list<string>  $arguments
  */
@@ -36,8 +36,16 @@ function runInstaller(string $home, array $arguments = []): ProcessResult
 {
     $script = dirname(__DIR__, 2).'/scripts/install.sh';
 
-    return (new ProcessShell)->run(['/usr/bin/env', '-i', "HOME={$home}", "PATH={$home}/bin:/usr/bin:/bin:/usr/sbin", "DOTSNITCH_RELEASES=file://{$home}/release", '/bin/sh', $script, ...$arguments]);
+    return (new ProcessShell)->run(['/usr/bin/env', '-i', "HOME={$home}", "PATH={$home}/bin:/usr/bin:/bin", "DOTSNITCH_RELEASES=file://{$home}/release", '/bin/sh', $script, ...$arguments]);
 }
+
+it('downloads the build for this Mac without sysctl on PATH', function () {
+    exec('/usr/sbin/sysctl -in hw.optional.arm64', $arm64);
+
+    $result = runInstaller($this->home);
+
+    expect($result->output)->toContain('Downloading '.(($arm64[0] ?? '') === '1' ? 'dotsnitch-arm64' : 'dotsnitch-x86_64'));
+});
 
 it('installs to ~/.local/bin and says how to put it on PATH', function () {
     $result = runInstaller($this->home);
