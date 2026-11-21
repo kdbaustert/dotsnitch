@@ -13,6 +13,9 @@ use App\Support\ProcessShell;
 /** What a status --quiet prompt can take before the prompt feels slow. */
 const QUIET_BUDGET_SECONDS = 0.1;
 
+/** GitHub's shared runners are slower than a Mac on a desk. The Intel one has taken 0.123. */
+const QUIET_BUDGET_SECONDS_ON_CI = 0.3;
+
 beforeEach(function () {
     $binary = getenv('DOTSNITCH_BINARY');
 
@@ -105,7 +108,8 @@ it('prints the prompt count from the saved report fast', function () {
 
     // The fastest of three, so one slow spawn on a busy runner doesn't fail it.
     expect(array_unique(array_column($runs, 'output')))->toBe(["1\n"])
-        ->and(min(array_column($runs, 'seconds')))->toBeLessThan(QUIET_BUDGET_SECONDS);
+        ->and(min(array_column($runs, 'seconds')))
+        ->toBeLessThan(getenv('CI') === 'true' ? QUIET_BUDGET_SECONDS_ON_CI : QUIET_BUDGET_SECONDS);
 });
 
 it('refreshes a stale report in the background', function () {

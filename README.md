@@ -295,7 +295,7 @@ Last of all, the build runs the Binary test suite against what it just made. Tho
 - it runs with no PHP on PATH and reads this Mac's details with `sysctl` and `scutil`
 - a first run finds the repo, reports drift and saves no settings
 - a dry run of Homebrew and symlinks changes nothing
-- `status --quiet` prints the count in under 100 ms
+- `status --quiet` prints the count in under 100 ms (300 ms on GitHub's runners, which are slower)
 - a stale report makes the binary start itself in the background
 - every extension in `scripts/extensions.txt` made it in
 
