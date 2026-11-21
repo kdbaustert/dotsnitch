@@ -70,7 +70,9 @@ final class LinkMapBuilder
     }
 
     /**
-     * What the layout files ask for: Dotbot first, then Stow, then *.symlink.
+     * What the layout files ask for: Dotbot first, then Stow, then *.symlink. A repo with a Dotbot
+     * config only gets Stow packages when it also has a .stowrc, since Dotbot's own submodule and
+     * folders like bin/ would look like packages.
      *
      * @param  list<string>  $manifests
      * @param  callable(string): void  $log
@@ -78,18 +80,22 @@ final class LinkMapBuilder
      */
     private function declared(array $manifests, callable $log): array
     {
+        $usesDotbot = false;
         $dotbot = [];
         $symlinkFiles = [];
 
         foreach ($manifests as $manifest) {
             if (str_ends_with($manifest, '.conf.yaml')) {
+                $usesDotbot = true;
                 array_push($dotbot, ...$this->fromDotbot($manifest, $log));
             } elseif (str_ends_with($manifest, '.symlink')) {
                 $symlinkFiles[] = $this->fromSymlinkFile($manifest);
             }
         }
 
-        return [...$dotbot, ...$this->fromStow(), ...$symlinkFiles];
+        $stow = $usesDotbot && ! is_file("{$this->root}/.stowrc") ? [] : $this->fromStow();
+
+        return [...$dotbot, ...$stow, ...$symlinkFiles];
     }
 
     /**
@@ -213,10 +219,15 @@ final class LinkMapBuilder
     }
 
     /**
-     * Holds an entry that would become a dotfile in the target.
+     * Holds an entry that would become a dotfile in the target. A submodule or nested repo never
+     * counts, since it's someone else's project.
      */
     private function isStowPackage(string $folder, bool $dotfiles): bool
     {
+        if (file_exists("{$folder}/.git")) {
+            return false;
+        }
+
         foreach (scandir($folder) ?: [] as $name) {
             $isDotEntry = str_starts_with($name, '.') && ! in_array($name, ['.', '..', ...self::STOW_IGNORED], true);
 

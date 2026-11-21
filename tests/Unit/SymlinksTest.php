@@ -142,6 +142,24 @@ it('maps Stow packages with --dotfiles and skips what Stow skips', function () {
     ]);
 });
 
+it("doesn't read Stow packages in a Dotbot repo without a .stowrc", function () {
+    putFile("{$this->root}/install.conf.yaml", "- link:\n    ~/.zshrc: zsh/zshrc\n");
+    putFile("{$this->root}/zsh/zshrc");
+    putFile("{$this->root}/dotbot/.editorconfig");
+    putFile("{$this->root}/dotbot/bin/dotbot");
+
+    expect(array_column(scanLinks(['install.conf.yaml']), 1))->toBe(["{$this->home}/.zshrc"]);
+});
+
+it('skips a submodule that looks like a Stow package', function () {
+    putFile("{$this->root}/.stowrc", "--target=~\n");
+    putFile("{$this->root}/zsh/.zshrc");
+    putFile("{$this->root}/vendored/.git", "gitdir: ../.git/modules/vendored\n");
+    putFile("{$this->root}/vendored/.editorconfig");
+
+    expect(array_column(scanLinks(['.stowrc']), 1))->toBe(["{$this->home}/.zshrc"]);
+});
+
 it('keeps the first layout when two claim the same path, and says so', function () {
     putFile("{$this->root}/install.conf.yaml", "- link:\n    ~/.zshrc: zsh/zshrc\n");
     putFile("{$this->root}/zsh/zshrc");
