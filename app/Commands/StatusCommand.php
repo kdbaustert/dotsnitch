@@ -74,7 +74,7 @@ final class StatusCommand extends Command
 
         // The daily run waits out a prompt's refresh instead of skipping the day.
         if (! $lock->acquire($notify ? self::NOTIFY_WAIT_SECONDS : 0)) {
-            $this->line('Another dotsnitch status is already running.');
+            $this->line('Another dotsnitch status or sync is already running.');
 
             // A daily run that waited and still couldn't scan shows as a failed run in launchd.
             return $notify ? self::FAILURE : self::SUCCESS;

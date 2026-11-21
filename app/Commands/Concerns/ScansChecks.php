@@ -114,7 +114,7 @@ trait ScansChecks
      * @param  list<Check>  $checks
      * @return list<Check> in registration order, not the order typed
      *
-     * @throws InvalidArgumentException for an unknown key, or a check whose tool isn't installed
+     * @throws InvalidArgumentException for no keys, an unknown key, or a check whose tool isn't installed
      */
     private function checksFromOption(array $checks): array
     {
@@ -122,7 +122,11 @@ trait ScansChecks
         $known = array_map(fn (Check $check) => $check->key(), $checks);
         $unknown = array_diff($keys, $known);
 
-        if ($keys === [] || $unknown !== []) {
+        if ($keys === []) {
+            throw new InvalidArgumentException('--checks needs at least one check. Checks: '.implode(', ', $known).'.');
+        }
+
+        if ($unknown !== []) {
             throw new InvalidArgumentException('Unknown check "'.implode('", "', $unknown).'" in --checks. Checks: '.implode(', ', $known).'.');
         }
 
@@ -218,7 +222,7 @@ trait ScansChecks
             $listed = $this->listsOnlyNew() ? array_values(array_filter($items, $saved->isNew(...))) : $items;
 
             if ($listed !== []) {
-                table(['Check', 'Drift', 'Package', 'Detail'], array_map(fn (DriftItem $item) => [
+                table(['Check', 'Drift', 'Item', 'Detail'], array_map(fn (DriftItem $item) => [
                     $this->checksByKey[$item->check]->target->label(),
                     $item->kind->value.($saved->isNew($item) ? ' (new)' : ''),
                     $item->subject->key(),

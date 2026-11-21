@@ -6,6 +6,7 @@ namespace App\Commands;
 
 use App\Commands\Concerns\ResolvesDrift;
 use App\Data\Check;
+use App\Support\StatusLock;
 use App\Support\UserSettings;
 use App\Sync\DriftReport;
 use LaravelZero\Framework\Commands\Command;
@@ -24,21 +25,32 @@ final class SyncCommand extends Command
 
     protected $description = 'Compare your dotfiles with this Mac and resolve what is out of sync';
 
+    /** Long enough for a background refresh to finish its scan. */
+    private const LOCK_WAIT_SECONDS = 120;
+
     /**
      * Asks which checks to run, scans each one with a live status, saves and prints the drift,
-     * then asks what to do about it.
+     * then asks what to do about it. Holds the status lock from the scan on, so a status run
+     * can't save or post a half-done sync.
      *
      * @return int failure when any check couldn't finish (the others still run), when a
-     *             report-only run found drift, or when a change failed
+     *             report-only run found drift, when a change failed, or when a status run
+     *             kept the lock
      *
      * @throws InvalidArgumentException when --checks names a check that doesn't exist or can't run
      */
-    public function handle(UserSettings $settings): int
+    public function handle(UserSettings $settings, StatusLock $lock): int
     {
         $checks = $this->allChecks();
         $selected = $this->option('checks') === null
             ? $this->askForChecks($checks, $settings)
             : $this->checksFromOption($checks);
+
+        if (! $this->waitForLock($lock)) {
+            $this->error('A dotsnitch status run is still scanning. Try again in a minute.');
+
+            return self::FAILURE;
+        }
 
         $reports = $this->scanEach($selected);
         $scanned = $this->report($reports, $this->saveScan($reports));
@@ -51,6 +63,22 @@ final class SyncCommand extends Command
         $resolved = $this->resolve($reports);
 
         return $scanned === self::SUCCESS ? $resolved : $scanned;
+    }
+
+    /**
+     * Takes the lock, waiting out a status run that's scanning and saying so.
+     *
+     * @return bool false when the status run still holds it after LOCK_WAIT_SECONDS
+     */
+    private function waitForLock(StatusLock $lock): bool
+    {
+        if ($lock->acquire()) {
+            return true;
+        }
+
+        $this->line('Waiting for the dotsnitch status run to finish.');
+
+        return $lock->acquire(self::LOCK_WAIT_SECONDS);
     }
 
     /**

@@ -13,7 +13,6 @@ beforeEach(function () {
     fakeMac($this);
     onlyOtherCheck();
     $this->settings->set('checks', ['other']);
-    $this->app->instance(StatusLock::class, new StatusLock("{$this->dir}/state/".StatusLock::FILE));
     $this->notifications = new FakeShell;
     $this->app->instance(Notifier::class, new Notifier($this->notifications, app(PathResolver::class)));
     $this->app->instance(LaunchAgent::class, new LaunchAgent(new FakeShell, $this->dir, "{$this->dir}/state/schedule.log"));
@@ -104,7 +103,7 @@ it('skips the scan while another status holds the lock', function () {
     expect($other->acquire())->toBeTrue();
 
     $this->artisan('status', ['--repo' => "{$this->dir}/repo"])
-        ->expectsOutputToContain('Another dotsnitch status is already running.')
+        ->expectsOutputToContain('Another dotsnitch status or sync is already running.')
         ->assertExitCode(0);
 
     expect(app(ReportStore::class)->latest())->toBeNull();

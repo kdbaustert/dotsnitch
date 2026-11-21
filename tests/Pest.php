@@ -7,6 +7,7 @@ use App\Data\Package;
 use App\Support\Machine;
 use App\Support\ManifestEditor;
 use App\Support\PathResolver;
+use App\Support\StatusLock;
 use App\Support\UserSettings;
 use App\Sync\Action;
 use App\Sync\Decision;
@@ -175,6 +176,7 @@ function fakeMac(TestCase $test): void
     app()->instance(Machine::class, new Machine($shell));
     app()->instance(ManifestEditor::class, new ManifestEditor("{$test->dir}/backups"));
     app()->instance(ReportStore::class, new ReportStore("{$test->dir}/state"));
+    app()->instance(StatusLock::class, new StatusLock("{$test->dir}/state/".StatusLock::FILE));
 }
 
 /**

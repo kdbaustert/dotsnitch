@@ -6,6 +6,7 @@ use App\Contracts\Shell;
 use App\Support\DotfilesRepo;
 use App\Support\ManifestEditor;
 use App\Support\PathResolver;
+use App\Support\StatusLock;
 use App\Support\UserSettings;
 use App\Sync\ReportStore;
 use App\Targets\Homebrew;
@@ -58,11 +59,26 @@ it('starts from the last picked checks, and only reports without a terminal', fu
     expect($this->settings->get('checks'))->toBe(['other']);
 });
 
+it('holds the status lock, so a status run waits for the sync to finish', function () {
+    onlyOtherCheck();
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other', '--no-interaction' => true])
+        ->assertExitCode(1);
+
+    expect((new StatusLock("{$this->dir}/state/".StatusLock::FILE))->isHeld())->toBeTrue();
+});
+
 it('rejects an unknown check in --checks', function () {
     $this->app->instance(Homebrew::class, fakeTarget('brew', fails: false));
 
     $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'brew,nope']);
 })->throws(InvalidArgumentException::class, 'Unknown check "nope" in --checks. Checks: brew, mas, composer, npm, pnpm, gh, pipx, uv, cargo, symlinks.');
+
+it('rejects --checks with no check in it', function () {
+    $this->app->instance(Homebrew::class, fakeTarget('brew', fails: false));
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => ',']);
+})->throws(InvalidArgumentException::class, '--checks needs at least one check. Checks: brew, mas, composer, npm, pnpm, gh, pipx, uv, cargo, symlinks.');
 
 it("rejects a check in --checks whose tool isn't installed", function () {
     $this->app->instance(Homebrew::class, fakeTarget('brew', fails: false, available: false));
