@@ -29,9 +29,16 @@ final class AtomicFile
 
         // tempnam() creates the file as 0600, which would stick after the rename.
         $mode = is_file($path) ? fileperms($path) & 0777 : 0666 & ~umask();
-        $temp = tempnam($directory, '.'.basename($path).'.');
+        $temp = @tempnam($directory, '.'.basename($path).'.');
 
-        if ($temp === false || file_put_contents($temp, $contents) === false || ! chmod($temp, $mode) || ! rename($temp, $path)) {
+        if ($temp === false) {
+            throw new RuntimeException("Could not write {$path}");
+        }
+
+        // Quiet, so a failure throws here and the temp file doesn't stay in the user's repo.
+        if (@file_put_contents($temp, $contents) === false || ! @chmod($temp, $mode) || ! @rename($temp, $path)) {
+            @unlink($temp);
+
             throw new RuntimeException("Could not write {$path}");
         }
     }

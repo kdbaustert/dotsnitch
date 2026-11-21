@@ -54,6 +54,21 @@ it('creates a new file without a backup and leaves an unchanged one alone', func
         ->and($this->editor->changed())->toBe([$overlay]);
 });
 
+it('leaves no temp file behind when the write fails', function () {
+    mkdir("{$this->dir}/repo/Brewfile");
+    // PHPUnit reports rename()'s warning even under @, so it's silenced for this one call.
+    set_error_handler(fn () => true);
+
+    try {
+        expect(fn () => $this->editor->edit("{$this->dir}/repo/Brewfile", fn () => "brew \"jq\"\n"))
+            ->toThrow(RuntimeException::class, "Could not write {$this->dir}/repo/Brewfile");
+    } finally {
+        restore_error_handler();
+    }
+
+    expect(scandir("{$this->dir}/repo"))->toBe(['.', '..', 'Brewfile']);
+});
+
 it('moves a folder into backups, keeping its full path', function () {
     mkdir("{$this->dir}/home/.config/nvim", recursive: true);
     file_put_contents("{$this->dir}/home/.config/nvim/init.lua", 'vim.o.number = true');
@@ -64,10 +79,14 @@ it('moves a folder into backups, keeping its full path', function () {
         ->and(file_get_contents("{$this->dir}/backups{$this->dir}/home/.config/nvim/init.lua"))->toBe('vim.o.number = true');
 });
 
-it("won't move over something already backed up", function () {
-    file_put_contents("{$this->dir}/.zshrc", 'new');
-    mkdir("{$this->dir}/backups{$this->dir}", recursive: true);
-    file_put_contents("{$this->dir}/backups{$this->dir}/.zshrc", 'old');
+it('numbers a backup instead of replacing one already there', function () {
+    $zshrc = "{$this->dir}/repo/.zshrc";
+    file_put_contents($zshrc, 'old');
 
-    $this->editor->moveToBackups("{$this->dir}/.zshrc");
-})->throws(RuntimeException::class, 'already exists');
+    $this->editor->edit($zshrc, fn () => 'edited');
+    $this->editor->moveToBackups($zshrc);
+
+    expect(file_exists($zshrc))->toBeFalse()
+        ->and(file_get_contents("{$this->dir}/backups{$zshrc}"))->toBe('old')
+        ->and(file_get_contents("{$this->dir}/backups{$zshrc}.1"))->toBe('edited');
+});

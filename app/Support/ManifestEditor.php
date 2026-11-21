@@ -73,16 +73,11 @@ final class ManifestEditor
     /**
      * Moves a file or folder out of the way, such as one a symlink is about to replace.
      *
-     * @throws RuntimeException when something is already backed up there, or the move fails
+     * @throws RuntimeException when the move fails
      */
     public function moveToBackups(string $path): void
     {
-        $destination = $this->backupOf($path);
-
-        if (file_exists($destination) || is_link($destination)) {
-            throw new RuntimeException("{$destination} already exists, so {$path} wasn't moved.");
-        }
-
+        $destination = $this->freeBackupOf($path);
         $this->makeParentOf($destination);
 
         if (! rename($path, $destination)) {
@@ -95,12 +90,29 @@ final class ManifestEditor
      */
     private function backUp(string $path): void
     {
-        $copy = $this->backupOf($path);
+        $copy = $this->freeBackupOf($path);
         $this->makeParentOf($copy);
 
         if (! copy($path, $copy)) {
             throw new RuntimeException("Could not back up {$path} to {$copy}");
         }
+    }
+
+    /**
+     * backupOf(), with .1, .2 and so on after it when that's taken, so a backup never replaces
+     * another. An adopt after an edit backs up the same file twice, and two runs that start in
+     * the same second share a folder.
+     */
+    private function freeBackupOf(string $path): string
+    {
+        $base = $this->backupOf($path);
+        $candidate = $base;
+
+        for ($number = 1; file_exists($candidate) || is_link($candidate); $number++) {
+            $candidate = "{$base}.{$number}";
+        }
+
+        return $candidate;
     }
 
     /**
