@@ -132,7 +132,7 @@ I haven't run the pipx, uv and Cargo checks on a Mac that has them installed. Th
 This check works from the whole repo, so it runs even when there's no layout file. It expects a link for:
 
 - each entry in a Dotbot config (`*.conf.yaml`), `glob` and `prefix` included. Entries with `if:` are skipped and logged.
-- each file in a Stow package, meaning a top-level folder that holds a dotfile. `--target` and `--dotfiles` are read from `.stowrc`.
+- each file in a Stow package, meaning a top-level folder that holds a dotfile. A submodule never counts, and a repo with a Dotbot config needs a `.stowrc` before any folder does. `--target` and `--dotfiles` are read from `.stowrc`.
 - each `*.symlink` file, so `zsh/zshrc.symlink` belongs at `~/.zshrc`.
 - each link that already points into the repo, or at the same path somewhere else, like an old checkout. It reads `~` and `~/.config` two levels down, plus any dot-folder the repo also has, as deep as the repo goes. So `repo/.claude/skills` means it reads `~/.claude/skills`.
 
@@ -155,7 +155,7 @@ After the report it asks how you want to handle the drift:
 - **Item by item:** one question per item, with the suggestion already picked.
 - **Report only:** changes nothing and exits with 1, same as running without a terminal.
 
-For each item you can add it to your dotfiles, install it, uninstall it, swap a deprecated package for its successor, ignore it on this Mac, or skip it. Adding asks whether it goes in the main manifest (every Mac) or the one with this Mac's hostname on the end.
+For each item you can add it to your dotfiles, install it, uninstall it, swap a deprecated package for its successor, ignore it on this Mac, or skip it. Adding asks whether it goes in the main manifest (every Mac) or the one with this Mac's hostname on the end. A setup script only gets that choice once the hostname copy exists, since a new empty one has no array to add to.
 
 You always see the whole plan before anything runs. Uninstalls get their own yes or no, and it defaults to no.
 
@@ -203,7 +203,7 @@ dotsnitch schedule                       # when it runs, its last exit code and 
 dotsnitch schedule --uninstall
 ```
 
-`--install` writes `~/Library/LaunchAgents/com.dotsnitch.status.plist`, which runs `status --notify` with the dotfiles directory, shell and PATH you installed it from. If the Mac's asleep at that time, launchd runs it when it wakes. If another `status` is already running, the daily run waits up to 5 minutes for it.
+`--install` writes `~/Library/LaunchAgents/com.dotsnitch.status.plist`, which runs `status --notify` with the dotfiles directory, shell and PATH you installed it from. If the Mac's asleep at that time, launchd runs it when it wakes. If another `status` or a `sync` is already running, the daily run waits up to 5 minutes for it.
 
 Each notification covers what the last one hadn't seen, so drift a `sync` or a prompt refresh found first still gets posted. It names up to three items ("2 new items out of sync (jq, gh-dash)"). With `terminal-notifier` installed, clicking it opens the standalone binary in Terminal. Without it, notifications go through `osascript` and clicking does nothing. Either way macOS may ask once whether to allow them.
 
@@ -242,7 +242,7 @@ The outer parentheses make Starship drop the whole group when the command prints
 | `~/.config/dotsnitch/config.json` | Your saved answers for this Mac: the dotfiles path, the Homebrew prefix, which manifests to read, and what's ignored |
 | `~/.local/state/dotsnitch/last-report.json` | The last scan's results and what was new in it (`$XDG_STATE_HOME` is used if set) |
 | `~/.local/state/dotsnitch/reports/` | The last 30 scans, one file each, for looking back |
-| `~/.local/state/dotsnitch/status.lock` | Keeps two `status` runs from scanning at once. Its time marks the last background refresh |
+| `~/.local/state/dotsnitch/status.lock` | Keeps two `status` runs, or a `status` and a `sync`, from scanning at once. Its time marks the last background refresh |
 | `~/.local/state/dotsnitch/last-notified.json` | What the last `status --notify` saw, so the next one posts only what came after |
 | `~/.local/state/dotsnitch/schedule.log` | What the daily run printed. Past 1 MB it moves to `schedule.log.1`, replacing the older one |
 | `~/Library/LaunchAgents/com.dotsnitch.status.plist` | The daily run, from `schedule --install` |
@@ -323,6 +323,20 @@ If the repo has a `HOMEBREW_TAP_TOKEN` secret that can push to `kdbaustert/homeb
 scripts/formula.sh v0.1.0 checksums.txt
 ```
 
+## Contributing
+
+Bug reports and pull requests are welcome. Since dotsnitch is still early and things move around, open an issue before you start on anything big, so you don't build on something that's about to change.
+
+When you report a bug, include your macOS version, whether the Mac is Apple Silicon or Intel, the output of `dotsnitch about`, and what the command printed. If it's about a manifest, a few lines of the file help a lot.
+
+For a pull request:
+
+1. Branch off `main` and send the PR back to it.
+2. Run `composer lint` and `composer test` before you push. CI runs both, plus a build on each architecture.
+3. Add a test for any behavior you change. Tests mustn't touch the real Mac, so run commands through `FakeShell` (see [Tests](#tests)).
+4. A new manifest format needs a round-trip test like the others.
+5. If the change is something a user would notice, update this README in the same PR.
+
 ## License
 
-MIT
+dotsnitch is released under the MIT License.
