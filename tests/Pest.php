@@ -102,11 +102,11 @@ function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarge
         }
 
         /**
-         * Just Brewfile, so it reads the same file as the real check.
+         * Just Brewfile unless the test set $patterns, so it reads the same file as the real check.
          */
         public function manifestPatterns(): array
         {
-            return ['Brewfile'];
+            return $this->patterns;
         }
 
         /**
@@ -147,6 +147,9 @@ function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarge
 
         /** @var list<string> */
         public array $ran = [];
+
+        /** @var list<string> */
+        public array $patterns = ['Brewfile'];
     };
 }
 

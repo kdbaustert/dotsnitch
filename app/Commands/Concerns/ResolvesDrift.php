@@ -313,8 +313,9 @@ trait ResolvesDrift
     }
 
     /**
-     * The shared base file or this Mac's overlay, which is created if it doesn't exist yet. With
-     * no manifest at all, the check's first plain file name at the repo root.
+     * The shared base file or this Mac's overlay, which is created if it doesn't exist yet. A
+     * setup script's overlay isn't, since an empty script has no array to add to. With no
+     * manifest at all, the check's first plain file name at the repo root.
      *
      * @return list<string> one absolute path, or none when there's nowhere sensible to add to
      */
@@ -329,6 +330,10 @@ trait ResolvesDrift
             $fallback = $overlay ?? $check->target->manifestPatterns()[0] ?? '*';
 
             return strpbrk($fallback, '*?[{') === false ? ["{$this->root}/{$fallback}"] : [];
+        }
+
+        if ($overlay === null && str_ends_with($base, '.sh')) {
+            return ["{$this->root}/{$base}"];
         }
 
         $overlay ??= "{$base}.{$this->hostname}";

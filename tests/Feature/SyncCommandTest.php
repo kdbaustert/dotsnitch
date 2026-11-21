@@ -116,6 +116,21 @@ it('adds to a new overlay for this Mac, rescans and saves the report', function 
         ->and(app(ReportStore::class)->latest()->checks)->toBe(['other' => ['other:untracked:formula:jq']]);
 });
 
+it('adds to a setup script without offering an overlay, since a new one has no array to add to', function () {
+    onlyOtherCheck()->patterns = ['mas.sh'];
+    file_put_contents("{$this->dir}/repo/mas.sh", "apps=(\n)\n");
+    answerWithQuestions();
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other'])
+        ->expectsQuestion('How do you want to resolve it?', 'review')
+        ->expectsQuestion('Pick the untracked Other items to add to dotfiles', ['formula:jq'])
+        ->expectsConfirmation('Apply these changes?', 'yes')
+        ->assertExitCode(0);
+
+    expect(file_get_contents("{$this->dir}/repo/mas.sh"))->toBe("apps=(\n)\nbrew \"jq\"\n")
+        ->and(file_exists("{$this->dir}/repo/mas.sh.mac"))->toBeFalse();
+});
+
 it('drops an uninstall when the second confirm says no', function () {
     $other = onlyOtherCheck();
     answerWithQuestions();
