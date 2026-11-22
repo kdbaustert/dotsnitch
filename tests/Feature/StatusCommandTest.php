@@ -55,6 +55,14 @@ it('leaves what each side has for a package to sync', function () {
         ->assertExitCode(0);
 });
 
+it('prints a name that looks like a color tag as it is', function () {
+    onlyOtherCheck()->package = 'a<info>b';
+
+    $this->artisan('status', ['--repo' => "{$this->dir}/repo"])
+        ->expectsOutputToContain('untracked  formula:a<info>b')
+        ->assertExitCode(0);
+});
+
 it("doesn't point at sync when everything matches", function () {
     onlyOtherCheck()->kinds = [];
 

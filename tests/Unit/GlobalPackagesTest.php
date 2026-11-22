@@ -179,6 +179,18 @@ it('says which manifests list a package and which version is installed', functio
         ->toBe(['dotfiles' => 'not listed', 'mac' => 'installed v1.5.0']);
 });
 
+it('names the folder of each manifest when two share a file name', function () {
+    $mac = new GlobalsMac;
+    $home = $mac->manifest('home/Composerfile', "laravel/installer\n");
+    $work = $mac->manifest('work/Composerfile', "laravel/installer\n");
+    $composer = composerOn($mac);
+
+    $report = $composer->scan([$home, $work], fn () => null);
+
+    expect($composer->sides(globalItem($report, 'missing:package:laravel/installer'))['dotfiles'])
+        ->toBe('listed in home/Composerfile, work/Composerfile');
+});
+
 it('reads composer.json require without platform packages, whatever the case', function () {
     $mac = new GlobalsMac;
     $manifest = $mac->manifest('composer/composer.json', '{"require": {"php": ">=8.2", "ext-mbstring": "*", "PSR/Log": "^3.0", "fzaninotto/faker": "^1.5"}}');

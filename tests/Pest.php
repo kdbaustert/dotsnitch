@@ -25,9 +25,9 @@ use Tests\TestCase;
 uses(TestCase::class)->in('Feature');
 
 /**
- * A check that reads any Brewfile and either throws or reports jq, once per kind in $kinds. Adding
- * it appends a line through the real ManifestEditor; uninstalling only records the call in $ran,
- * or fails when $uninstallError is set.
+ * A check that reads any Brewfile and either throws or reports $package, once per kind in $kinds.
+ * Adding it appends a line through the real ManifestEditor; uninstalling only records the call in
+ * $ran, or fails when $uninstallError is set.
  */
 function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarget
 {
@@ -41,6 +41,9 @@ function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarge
 
         /** @var list<DriftKind> */
         public array $kinds = [DriftKind::Untracked];
+
+        /** The formula scan() reports. */
+        public string $package = 'jq';
 
         /** Set it to make the uninstall step fail with this message. */
         public ?string $uninstallError = null;
@@ -92,8 +95,11 @@ function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarge
                 throw new RuntimeException('brew info failed: boom');
             }
 
+            // Reads them the way a real check does, so one that can't be read warns here too.
+            array_map(file_get_contents(...), $manifests);
+
             return new DriftReport($this->key, array_map(
-                fn (DriftKind $kind) => new DriftItem($this->key, $kind, new Package('jq', 'formula')),
+                fn (DriftKind $kind) => new DriftItem($this->key, $kind, new Package($this->package, 'formula')),
                 $this->kinds,
             ));
         }
@@ -121,7 +127,7 @@ function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarge
         {
             return match ($decision->action) {
                 Action::AddToManifest => [new Step(
-                    'Add formula:jq to '.basename($decision->manifests[0]),
+                    "Add formula:{$this->package} to ".basename($decision->manifests[0]),
                     fn () => app(ManifestEditor::class)->edit($decision->manifests[0], fn (string $contents) => $contents."brew \"jq\"\n"),
                 )],
                 Action::Uninstall => [new Step('brew uninstall --formula jq', function () {
@@ -167,6 +173,15 @@ function fakeMac(TestCase $test): void
     app()->instance(ReportStore::class, new ReportStore("{$test->dir}/state"));
     app()->instance(SyncLog::class, new SyncLog("{$test->dir}/state"));
     app()->instance(StatusLock::class, new StatusLock("{$test->dir}/state/".StatusLock::FILE));
+}
+
+/**
+ * Throws PHP warnings as ErrorException unless @ silenced them, the way Laravel does once the app
+ * has booted. Unit tests never boot it. Call restore_error_handler() when done.
+ */
+function throwWarnings(): void
+{
+    set_error_handler(fn (int $level, string $message) => (error_reporting() & $level) === 0 ?: throw new ErrorException($message));
 }
 
 /**

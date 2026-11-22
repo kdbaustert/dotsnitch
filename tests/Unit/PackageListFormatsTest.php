@@ -65,7 +65,9 @@ it('reads a mas id with or without its name, and finds each name in a script', f
         ->and($spec->entry(new Package('1436522307', 'app')))->toBe('1436522307:Transmit 5')
         ->and($spec->entry(new Package('497799835', 'app')))->toBe('497799835')
         ->and(MasSpec::titlesIn("apps=(\n  \"497799835:Xcode\"  # IDE\n  '1436522307:Transmit 5'\n)\nmas install \"\${app%%:*}\"\n"))
-        ->toBe(['497799835' => 'Xcode', '1436522307' => 'Transmit 5']);
+        ->toBe(['497799835' => 'Xcode', '1436522307' => 'Transmit 5'])
+        ->and(MasSpec::titlesIn("\"111:Baker's Dozen\"\n'222:The \"Best\" App'\n333:Xcode  # IDE\n"))
+        ->toBe(['111' => "Baker's Dozen", '222' => 'The "Best" App', '333' => 'Xcode']);
 });
 
 it('reads gh extensions as lowercase owner/repo with an optional pin', function () {
@@ -105,6 +107,36 @@ it('quotes a plain list entry that has a space, and reads it back whole', functi
 
     expect($edit->contents())->toBe("497799835:Xcode\n\"1436522307:Transmit 5\"\n")
         ->and(namesOf((new LineListEdit($edit->contents(), new MasSpec))->entries()))->toBe(['497799835', '1436522307']);
+});
+
+it('quotes an app name with an apostrophe so it can find the line again, and leaves off one a script would change', function () {
+    $edit = new LineListEdit('', new MasSpec(['111' => "Baker's Dozen", '222' => 'Cash $aver', '333' => "Tim's"]));
+
+    $edit->add(new Package('111', 'app'));
+    $edit->add(new Package('222', 'app'));
+    $edit->add(new Package('333', 'app'));
+
+    expect($edit->contents())->toBe("\"111:Baker's Dozen\"\n222\n\"333:Tim's\"\n")
+        ->and($edit->lists(new Package('111', 'app')))->toBeTrue()
+        ->and($edit->remove(new Package('333', 'app')))->toBeTrue()
+        ->and($edit->contents())->toBe("\"111:Baker's Dozen\"\n222\n");
+});
+
+it('reads a requirement with spaces around its operator as one package', function () {
+    $edit = new LineListEdit("ruff >= 0.6\nblack ~= 24.1, < 25  # formatter\n\"httpie >= 3\"\n", new PythonSpec);
+
+    expect(namesOf($edit->entries()))->toBe(['ruff@>=0.6', 'black@~=24.1,<25', 'httpie@>=3'])
+        ->and($edit->lists(new Package('ruff', 'package')))->toBeFalse()
+        ->and($edit->remove(new Package('httpie', 'package')))->toBeTrue();
+});
+
+it('keeps Windows line endings when it adds a line', function () {
+    $edit = new LineListEdit("black\r\nruff\r\n", new PythonSpec);
+
+    $edit->add(new Package('httpie', 'package'));
+
+    expect($edit->contents())->toBe("black\r\nruff\r\nhttpie\r\n")
+        ->and(namesOf($edit->entries()))->toBe(['black', 'ruff', 'httpie']);
 });
 
 it('reads a plain list, skipping comments and blank lines', function () {
@@ -232,6 +264,14 @@ it('adds a caret constraint and keeps the indent, the newline and an empty objec
     $edit->add(new Package('typescript', 'package', '6.0.3'));
 
     expect($edit->contents())->toBe("{\n  \"name\": \"globals\",\n  \"config\": {},\n  \"dependencies\": {\n    \"neovim\": \"^5.5.0\",\n    \"typescript\": \"^6.0.3\"\n  }\n}\n");
+});
+
+it('keeps a JSON number written as 1.0', function () {
+    $edit = new JsonRequireEdit("{\n  \"schema\": 1.0,\n  \"dependencies\": {\n    \"neovim\": \"^5.5.0\"\n  }\n}\n", 'dependencies');
+
+    $edit->add(new Package('typescript', 'package', '6.0.3'));
+
+    expect($edit->contents())->toBe("{\n  \"schema\": 1.0,\n  \"dependencies\": {\n    \"neovim\": \"^5.5.0\",\n    \"typescript\": \"^6.0.3\"\n  }\n}\n");
 });
 
 it('creates the section, and writes * for a version that is not a number', function () {

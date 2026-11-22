@@ -255,9 +255,9 @@ final class LaunchAgent
      */
     private static function lastLines(string $path, int $count): array
     {
-        $handle = is_file($path) ? fopen($path, 'r') : false;
+        $handle = $count > 0 && is_file($path) ? fopen($path, 'r') : false;
 
-        if ($handle === false || $count <= 0) {
+        if ($handle === false) {
             return [];
         }
 

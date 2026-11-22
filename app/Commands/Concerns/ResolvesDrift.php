@@ -23,9 +23,11 @@ use App\Sync\ResolutionMode;
 use App\Sync\Step;
 use App\Sync\SyncLog;
 use Closure;
+use ErrorException;
 use Laravel\Prompts\Progress;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Output\OutputInterface;
 
 use function Laravel\Prompts\confirm;
@@ -72,17 +74,28 @@ trait ResolvesDrift
         }
 
         $this->showPlan($changes);
-        $this->showSteps($changes);
 
         if ($this->option('dry-run')) {
+            $this->showSteps($changes);
+
             return $this->failureReport();
         }
+
+        // Asked before the steps are listed, so the list holds only what a yes would run.
+        $confirmed = $this->withUninstallsConfirmed($changes);
+
+        if ($confirmed === []) {
+            $this->info('Nothing to change.');
+
+            return $this->failureReport();
+        }
+
+        $this->showSteps($confirmed);
 
         if (! confirm('Apply these changes?', default: true)) {
             return Command::SUCCESS;
         }
 
-        $confirmed = $this->withUninstallsConfirmed($changes);
         $applied = $this->apply($confirmed);
         $this->showApplied(count($applied), count($confirmed));
 
@@ -172,7 +185,7 @@ trait ResolvesDrift
         }
 
         $picked = multiselect(
-            "{$this->targetOf($first)->label()}, {$first->kind->label()}: pick the ones to ".lcfirst($suggestion->label()),
+            "{$this->targetOf($first)->label()}, {$first->kind->label()}: pick the ones to {$suggestion->verb()}",
             $options,
             default: array_keys($options),
             scroll: 10,
@@ -363,7 +376,7 @@ trait ResolvesDrift
                     ? [$this->ignoreStep($decision->item)]
                     : $this->targetOf($decision->item)->steps($decision);
                 $changes[] = new Change($decision, $steps);
-            } catch (RuntimeException $e) {
+            } catch (RuntimeException|ErrorException $e) {
                 $this->failures[] = "{$this->describe($decision->item)}: {$e->getMessage()}";
             }
         }
@@ -415,7 +428,7 @@ trait ResolvesDrift
 
         foreach ($changes as $change) {
             foreach ($change->steps as $step) {
-                $this->line("  {$step->description}");
+                $this->line('  '.OutputFormatter::escape($step->description));
             }
         }
     }
@@ -455,10 +468,6 @@ trait ResolvesDrift
      */
     private function apply(array $changes): array
     {
-        if ($changes === []) {
-            return [];
-        }
-
         $log = $this->laravel->make(SyncLog::class);
         $results = progress('Applying changes', $changes, function (Change $change, Progress $progress) use ($log) {
             $progress->hint($this->describe($change->decision->item));
@@ -466,7 +475,7 @@ trait ResolvesDrift
             foreach ($change->steps as $step) {
                 try {
                     $effect = ($step->run)();
-                } catch (RuntimeException $e) {
+                } catch (RuntimeException|ErrorException $e) {
                     $log->failed($change->decision, $step, $e->getMessage());
                     $this->failures[] = "{$step->description}: {$e->getMessage()}";
 
@@ -484,15 +493,9 @@ trait ResolvesDrift
 
     /**
      * Such as "Applied 4 of 5 changes.", then where this run's backups and its record are.
-     *
-     * @param  int  $planned  0 when every change was an uninstall that got turned down
      */
     private function showApplied(int $applied, int $planned): void
     {
-        if ($planned === 0) {
-            return;
-        }
-
         $this->line($applied === $planned
             ? "Applied {$applied} ".($applied === 1 ? 'change' : 'changes').'.'
             : "Applied {$applied} of {$planned} changes.");
@@ -631,7 +634,7 @@ trait ResolvesDrift
         $this->error(count($this->failures).' '.(count($this->failures) === 1 ? 'change' : 'changes').' failed:');
 
         foreach ($this->failures as $failure) {
-            $this->line("  {$failure}");
+            $this->line('  '.OutputFormatter::escape($failure));
         }
 
         return Command::FAILURE;

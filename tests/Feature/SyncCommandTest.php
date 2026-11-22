@@ -59,6 +59,21 @@ it('keeps scanning after one check fails and exits with failure', function () {
         ->assertExitCode(1);
 });
 
+it("fails a check whose manifest can't be read, and still runs the others", function () {
+    $locked = fakeTarget('other', fails: false);
+    $locked->patterns = ['locked.txt'];
+    $this->app->instance(Homebrew::class, fakeTarget('brew', fails: false));
+    $this->app->instance('fake-target', $locked);
+    $this->app->tag(['fake-target'], 'sync-targets');
+    file_put_contents("{$this->dir}/repo/locked.txt", "jq\n");
+    chmod("{$this->dir}/repo/locked.txt", 0);
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'brew,other', '--no-interaction' => true])
+        ->expectsOutputToContain('Failed: file_get_contents(): Failed to open stream: Permission denied')
+        ->expectsOutputToContain('formula:jq')
+        ->assertExitCode(1);
+});
+
 it('starts from the last picked checks, and only reports without a terminal', function () {
     $this->settings->set('checks', ['other']);
     $this->app->instance(Homebrew::class, fakeTarget('brew', fails: true));
@@ -110,6 +125,14 @@ it("rejects a check in --checks whose tool isn't installed", function () {
     $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'brew']);
 })->throws(InvalidArgumentException::class, "Brew isn't installed on this Mac.");
 
+it('lists a step with a name that looks like a color tag as it is', function () {
+    onlyOtherCheck()->package = 'a<info>b';
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other', '--dry-run' => true, '--no-interaction' => true])
+        ->expectsOutputToContain('Add formula:a<info>b to Brewfile')
+        ->assertExitCode(0);
+});
+
 it('prints the plan and the commands on a dry run, and changes nothing but the saved scan', function () {
     $other = onlyOtherCheck();
 
@@ -156,15 +179,16 @@ it('adds to a setup script without offering an overlay, since a new one has no a
         ->and(file_exists("{$this->dir}/repo/mas.sh.mac"))->toBeFalse();
 });
 
-it('drops an uninstall when the second confirm says no', function () {
+it('drops an uninstall when its own confirm says no, before it lists any commands', function () {
     $other = onlyOtherCheck();
     answerWithQuestions();
 
     $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other'])
         ->expectsQuestion('How do you want to resolve it?', 'each')
         ->expectsQuestion('Other, untracked: formula:jq', 'uninstall')
-        ->expectsConfirmation('Apply these changes?', 'yes')
         ->expectsConfirmation('Uninstall formula:jq?', 'no')
+        ->expectsOutputToContain('Nothing to change.')
+        ->doesntExpectOutputToContain('These will run, in order:')
         ->doesntExpectOutputToContain('Applied')
         ->assertExitCode(0);
 
@@ -249,8 +273,8 @@ it('logs a step that failed, with its error', function () {
     $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other'])
         ->expectsQuestion('How do you want to resolve it?', 'each')
         ->expectsQuestion('Other, untracked: formula:jq', 'uninstall')
-        ->expectsConfirmation('Apply these changes?', 'yes')
         ->expectsConfirmation('Uninstall formula:jq?', 'yes')
+        ->expectsConfirmation('Apply these changes?', 'yes')
         ->expectsOutputToContain('Applied 0 of 1 changes.')
         ->expectsOutputToContain('brew uninstall --formula jq: jq is in use')
         ->assertExitCode(1);

@@ -79,7 +79,7 @@ dotsnitch --repo=~/dotfiles --checks=brew --dry-run
 
 Plain `dotsnitch` (the `sync` command) asks which checks to run. The first time, it ticks every check that's installed and has a manifest. After that it starts from what you picked last. `--checks=brew,pnpm` skips the question.
 
-You get a live status for each check while it scans. Then there's a summary row per check and a table of everything not installed, untracked, deprecated or disabled. Under each package, `sync` says what your dotfiles have and what this Mac has, like "listed in Brewfile" and "not installed". If a check can't finish, its row says why, the others still run, and dotsnitch exits with 1.
+You get a live status for each check while it scans. Then there's a summary row per check and a list of everything not installed, untracked, deprecated or disabled, grouped by check. Under each package, `sync` says what your dotfiles have and what this Mac has, like "listed in Brewfile" and "not installed". If a check can't finish, its row says why, the others still run, and dotsnitch exits with 1.
 
 ## What it checks
 
@@ -102,7 +102,7 @@ Each check's file patterns live in its class under `app/Targets`.
 
 A manifest can be:
 
-- a plain list, one package per line, with `#` comments if you like
+- a plain list, one package per line or several with spaces between them, with `#` comments if you like
 - a JSON file, read from `require` (Composer) or `dependencies` (npm)
 - a setup script that keeps the names in bash arrays like `pkgs=( ... )` and `pkgs+=( ... )`, for checks with a `.sh` pattern
 
@@ -118,9 +118,9 @@ A manifest with your hostname on the end, like `Brewfile.kennys-macbook-pro`, is
 - **Composer** only looks at direct requires (`composer global show --direct`), so dependencies never show up as untracked. That's true when your manifest is Composer's own `composer.json` linked in from your dotfiles, too.
 - **npm** never reports the npm that's running the check, wherever it's installed.
 - **pnpm** installs one package per `pnpm add -g`. pnpm 11 keeps the packages from each `add -g` call together in a group, so an untracked package in a shared group tells you which packages it shares it with. If pnpm's global bin dir isn't on your login PATH, the scan tells you to run `pnpm setup`.
-- **Mac App Store** goes by app id. An entry can be `497799835` or `497799835:Xcode`, and the report shows the name. New entries get the name too, in double quotes when it has a space (`"1436522307:Transmit 5"`), so quote those yourself in a plain list. It reads the text from `mas list`, because mas 7's `--json` leaves out some apps' ids. Uninstalling runs `sudo mas uninstall`, so expect a password prompt.
+- **Mac App Store** goes by app id. An entry can be `497799835` or `497799835:Xcode`, and the report shows the name. New entries get the name too, in double quotes when it has a space or an apostrophe (`"1436522307:Transmit 5"`), so quote those yourself in a plain list. A name with a `"`, `$`, backtick, backslash or `#` in it is left off, and the entry is just the id. It reads the text from `mas list`, because mas 7's `--json` leaves out some apps' ids. Uninstalling runs `sudo mas uninstall`, so expect a password prompt.
 - **GitHub CLI extensions** are `owner/repo`, and `owner/repo@v1.2.0` installs with `--pin v1.2.0`. A local extension shows up by its `gh-name` and can't be installed from here.
-- **pipx** and **uv** match names the way pip does, so `Poetry_Core`, `poetry.core` and `poetry-core` are the same package. Extras and specifiers like `httpie[socks]>=3` are kept when installing. pipx only counts each app's main package, not whatever you injected into it, and uninstalls by venv name so a `--suffix` install works.
+- **pipx** and **uv** match names the way pip does, so `Poetry_Core`, `poetry.core` and `poetry-core` are the same package. Extras and specifiers like `httpie[socks]>=3` are kept when installing. `ruff >= 0.6` with spaces reads the same, but dotsnitch only edits that line when the entry is in quotes. pipx only counts each app's main package, not whatever you injected into it, and uninstalls by venv name so a `--suffix` install works.
 - **Cargo** reads `cargo install --list`, crates from git included. `ripgrep@14.1.1` installs that version.
 
 A pin like `typescript@6` or `laravel/installer:^5` matches whatever version is installed, and Install keeps the pin. Version mismatches aren't flagged yet.
@@ -145,7 +145,7 @@ Each path that's off comes back as one of these:
 - **wrong target:** repoint the link
 - **broken:** the repo file is gone, so remove the link
 
-Anything moved out of the way goes in this run's backup folder under `~/.cache/dotsnitch/backups`. For now, repointing leaves the old destination where it is, and adopting doesn't offer to commit.
+Anything moved out of the way goes in this run's backup folder under `~/.cache/dotsnitch/backups`. For now, repointing leaves the old destination where it is.
 
 ## Fixing what it found
 

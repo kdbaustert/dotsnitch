@@ -37,7 +37,7 @@ final class ManifestEditor
     {
         $path = AtomicFile::resolve($path);
         $exists = is_file($path);
-        $before = $exists ? file_get_contents($path) : '';
+        $before = $exists ? @file_get_contents($path) : '';
 
         if ($before === false) {
             throw new RuntimeException("Could not read {$path}");
@@ -106,7 +106,7 @@ final class ManifestEditor
         $destination = $this->freeBackupOf($path);
         AtomicFile::makeParentOf($destination);
 
-        if (! rename($path, $destination)) {
+        if (! @rename($path, $destination)) {
             throw new RuntimeException("Could not move {$path} to {$destination}");
         }
 
@@ -123,7 +123,7 @@ final class ManifestEditor
         $copy = $this->freeBackupOf($path);
         AtomicFile::makeParentOf($copy);
 
-        if (! copy($path, $copy)) {
+        if (! @copy($path, $copy)) {
             throw new RuntimeException("Could not back up {$path} to {$copy}");
         }
 

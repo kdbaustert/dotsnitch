@@ -85,7 +85,8 @@ final class DotfilesRepo
     private function linkedRepo(): ?string
     {
         $home = $this->inherited['HOME'] ?? '';
-        $configHome = $this->inherited['XDG_CONFIG_HOME'] ?? "{$home}/.config";
+        // Set but empty counts as unset, as the XDG spec has it.
+        $configHome = ($this->inherited['XDG_CONFIG_HOME'] ?? '') ?: "{$home}/.config";
         $links = [];
 
         foreach ([$home, $configHome] as $dir) {

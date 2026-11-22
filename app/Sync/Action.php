@@ -45,4 +45,17 @@ enum Action: string
             self::Skip => 'Skip',
         };
     }
+
+    /**
+     * The label as it reads after "pick the ones to", where "create link" wouldn't.
+     */
+    public function verb(): string
+    {
+        return match ($this) {
+            self::Link => 'link',
+            self::Repoint => 'repoint',
+            self::Unlink => 'unlink',
+            default => lcfirst($this->label()),
+        };
+    }
 }

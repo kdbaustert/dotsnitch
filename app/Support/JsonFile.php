@@ -12,7 +12,7 @@ final class JsonFile
     /**
      * @return ?array<mixed> null when the file doesn't exist or is empty
      *
-     * @throws RuntimeException when the file exists but isn't a JSON object or array
+     * @throws RuntimeException when the file exists but can't be read, or isn't a JSON object or array
      */
     public static function read(string $path): ?array
     {
@@ -20,7 +20,13 @@ final class JsonFile
             return null;
         }
 
-        $contents = (string) file_get_contents($path);
+        // Silenced, since `status --quiet` reads the report before Laravel boots and PHP would
+        // print the warning into the shell prompt.
+        $contents = @file_get_contents($path);
+
+        if ($contents === false) {
+            throw new RuntimeException("Could not read {$path}");
+        }
 
         if (trim($contents) === '') {
             return null;

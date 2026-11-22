@@ -66,6 +66,17 @@ it('puts Homebrew first and existing tool bin dirs last on the login PATH', func
         ->and($environment)->not->toHaveKey('SHLVL');
 });
 
+it('leaves +m off for fish', function () {
+    $shell = (new FakeShell)->expect(
+        ['/opt/homebrew/bin/fish', '-lic', 'printf __DOTSNITCH_ENV__; /usr/bin/env -0'],
+        loginOutput(['PATH' => '/usr/bin:/bin']),
+    );
+    $resolver = new PathResolver($shell, $this->settings, [...$this->inherited, 'SHELL' => '/opt/homebrew/bin/fish'], []);
+
+    expect($resolver->homeEnvironment()['PATH'])->toBe('/usr/bin:/bin')
+        ->and($resolver->warnings())->toBe([]);
+});
+
 it('falls back to the inherited environment when the login shell fails', function () {
     $shell = (new FakeShell)->expect(LOGIN_COMMAND, exitCode: 1);
     $resolver = new PathResolver($shell, $this->settings, $this->inherited, []);

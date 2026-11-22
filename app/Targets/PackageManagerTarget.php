@@ -44,7 +44,7 @@ abstract class PackageManagerTarget implements ComparesSides, SyncTarget
     /** @var array<string, Package> what the last scan() found installed, by Package key */
     private array $installedByKey = [];
 
-    /** @var array<string, list<string>> the manifests the last scan() found each package in, as file names by Package key */
+    /** @var array<string, list<string>> the manifests the last scan() found each package in, as file names by Package key, with the folder when two share a name */
     private array $listedIn = [];
 
     /**
@@ -101,11 +101,15 @@ abstract class PackageManagerTarget implements ComparesSides, SyncTarget
         $log("{$installed->count()} installed");
         $listed = collect();
         $this->listedIn = [];
+        $sharingName = array_count_values(array_map(basename(...), $manifests));
 
         foreach ($entries as $manifest => $packages) {
+            // mac/Brewfile and work/Brewfile would both read as Brewfile, so those keep their folder.
+            $name = $sharingName[basename($manifest)] > 1 ? basename(dirname($manifest)).'/'.basename($manifest) : basename($manifest);
+
             foreach ($packages->map($this->canonical(...)) as $package) {
                 $listed[$package->key()] = $package;
-                $this->listedIn[$package->key()][] = basename($manifest);
+                $this->listedIn[$package->key()][] = $name;
             }
         }
 

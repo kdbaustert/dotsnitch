@@ -95,6 +95,20 @@ it('leaves no temp file behind when the write fails', function () {
     expect(scandir("{$this->dir}/repo"))->toBe(['.', '..', 'Brewfile']);
 });
 
+it("says which file it couldn't read, even when warnings throw", function () {
+    $brewfile = "{$this->dir}/repo/Brewfile";
+    file_put_contents($brewfile, "brew \"jq\"\n");
+    chmod($brewfile, 0);
+    throwWarnings();
+
+    try {
+        expect(fn () => $this->editor->edit($brewfile, fn () => ''))
+            ->toThrow(RuntimeException::class, "Could not read {$brewfile}");
+    } finally {
+        restore_error_handler();
+    }
+});
+
 it('moves a folder into backups, keeping its full path', function () {
     mkdir("{$this->dir}/home/.config/nvim", recursive: true);
     file_put_contents("{$this->dir}/home/.config/nvim/init.lua", 'vim.o.number = true');

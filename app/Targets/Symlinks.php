@@ -255,7 +255,7 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
 
             AtomicFile::makeParentOf($link->target);
 
-            if (! symlink($link->source, $link->target)) {
+            if (! @symlink($link->source, $link->target)) {
                 throw new RuntimeException("Could not link {$link->target} to {$link->source}");
             }
 
@@ -285,7 +285,7 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
                 throw new RuntimeException("{$link->source} is still in the repo");
             }
 
-            if (! rename($link->target, $link->source)) {
+            if (! @rename($link->target, $link->source)) {
                 throw new RuntimeException("Could not move {$link->target} to {$link->source}");
             }
 
@@ -309,11 +309,11 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
             $pointedTo = readlink($link->target);
             $temporary = dirname($link->target).'/.dotsnitch-'.bin2hex(random_bytes(4));
 
-            if (! symlink($link->source, $temporary)) {
+            if (! @symlink($link->source, $temporary)) {
                 throw new RuntimeException("Could not create a link next to {$link->target}");
             }
 
-            if (! rename($temporary, $link->target)) {
+            if (! @rename($temporary, $link->target)) {
                 unlink($temporary);
 
                 throw new RuntimeException("Could not repoint {$link->target}");
@@ -335,7 +335,7 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
 
             $pointedTo = readlink($link->target);
 
-            if (! unlink($link->target)) {
+            if (! @unlink($link->target)) {
                 throw new RuntimeException("Could not remove {$link->target}");
             }
 

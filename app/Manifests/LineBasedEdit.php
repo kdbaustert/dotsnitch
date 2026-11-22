@@ -15,6 +15,9 @@ abstract class LineBasedEdit implements ManifestEdit
     /** @var list<string> */
     protected array $lines;
 
+    /** \r\n for a file saved on Windows, so a new line ends like the ones around it. */
+    private readonly string $lineEnding;
+
     private readonly bool $endsWithNewline;
 
     /**
@@ -22,8 +25,12 @@ abstract class LineBasedEdit implements ManifestEdit
      */
     public function __construct(string $contents)
     {
-        $this->endsWithNewline = $contents === '' || str_ends_with($contents, "\n");
-        $this->lines = $contents === '' ? [] : explode("\n", $this->endsWithNewline ? substr($contents, 0, -1) : $contents);
+        $this->lineEnding = str_contains($contents, "\r\n") ? "\r\n" : "\n";
+        $this->endsWithNewline = $contents === '' || str_ends_with($contents, $this->lineEnding);
+        $this->lines = $contents === '' ? [] : explode(
+            $this->lineEnding,
+            $this->endsWithNewline ? substr($contents, 0, -strlen($this->lineEnding)) : $contents,
+        );
     }
 
     /**
@@ -60,8 +67,8 @@ abstract class LineBasedEdit implements ManifestEdit
      */
     public function contents(): string
     {
-        $contents = implode("\n", $this->lines);
+        $contents = implode($this->lineEnding, $this->lines);
 
-        return $this->endsWithNewline && $this->lines !== [] ? "{$contents}\n" : $contents;
+        return $this->endsWithNewline && $this->lines !== [] ? $contents.$this->lineEnding : $contents;
     }
 }

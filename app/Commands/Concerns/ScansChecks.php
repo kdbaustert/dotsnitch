@@ -18,10 +18,12 @@ use App\Sync\DriftReport;
 use App\Sync\IgnoreList;
 use App\Sync\ReportStore;
 use App\Sync\SavedScan;
+use ErrorException;
 use Laravel\Prompts\Support\Logger;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
 use Symfony\Component\Console\Exception\InvalidArgumentException;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 
 use function Laravel\Prompts\spin;
 use function Laravel\Prompts\table;
@@ -185,10 +187,11 @@ trait ScansChecks
                     array_map(fn (string $file) => "{$this->root}/{$file}", $check->manifests),
                     $logger->line(...),
                 ));
-            } catch (RuntimeException $e) {
+            } catch (RuntimeException|ErrorException $e) {
                 $logger->error("Check failed: {$e->getMessage()}");
 
-                return $e;
+                // Laravel throws a PHP warning, such as a manifest that can't be read, as an ErrorException.
+                return $e instanceof RuntimeException ? $e : new RuntimeException($e->getMessage(), previous: $e);
             }
 
             $report->isInSync()
@@ -273,10 +276,11 @@ trait ScansChecks
             $this->line("<options=bold>{$this->checksByKey[$check]->target->label()}</>");
 
             foreach ($group as $index => $item) {
-                $this->line(sprintf('  <fg=%s>%s</>  %s', $this->colorOf($item->kind), str_pad($kinds[$index], $width), $item->subject->key()));
+                // Escaped, since a path or a name can hold something that reads as a color tag.
+                $this->line(sprintf('  <fg=%s>%s</>  %s', $this->colorOf($item->kind), str_pad($kinds[$index], $width), OutputFormatter::escape($item->subject->key())));
 
                 foreach ($this->notesOn($item) as $note) {
-                    $this->line(str_repeat(' ', $width + 4)."<fg=gray>{$note}</>");
+                    $this->line(str_repeat(' ', $width + 4).'<fg=gray>'.OutputFormatter::escape($note).'</>');
                 }
             }
         }

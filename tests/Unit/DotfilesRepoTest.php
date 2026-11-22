@@ -83,6 +83,15 @@ it('reads XDG_CONFIG_HOME for config symlinks', function () {
     expect($repo->resolve(null))->toBe("{$this->home}/setup");
 });
 
+it('reads ~/.config when XDG_CONFIG_HOME is set but empty', function () {
+    mkdir("{$this->home}/setup/.git", recursive: true);
+    mkdir("{$this->home}/.config");
+    symlink("{$this->home}/setup", "{$this->home}/.config/nvim");
+    $repo = new DotfilesRepo($this->settings, ['HOME' => $this->home, 'XDG_CONFIG_HOME' => '']);
+
+    expect($repo->resolve(null))->toBe("{$this->home}/setup");
+});
+
 it('remembers the resolved directory for root()', function () {
     $this->repo->resolve('~/dots');
 

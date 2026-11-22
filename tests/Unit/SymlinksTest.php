@@ -216,6 +216,27 @@ it('creates the link and the folders above it', function () {
     expect(readlink($link->target))->toBe($link->source);
 });
 
+it("says which link it couldn't create, even when warnings throw", function () {
+    putFile("{$this->root}/.vimrc");
+    mkdir("{$this->home}/locked", 0500);
+    $link = new Link("{$this->root}/.vimrc", "{$this->home}/locked/.vimrc");
+    throwWarnings();
+
+    try {
+        expect(fn () => runLinkAction(Action::Link, new DriftItem('symlinks', DriftKind::NotLinked, $link)))
+            ->toThrow(RuntimeException::class, "Could not link {$link->target} to {$link->source}");
+    } finally {
+        restore_error_handler();
+    }
+});
+
+it('words the group question so it reads after "pick the ones to"', function () {
+    expect(Action::Link->verb())->toBe('link')
+        ->and(Action::Repoint->verb())->toBe('repoint')
+        ->and(Action::Unlink->verb())->toBe('unlink')
+        ->and(Action::AddToManifest->verb())->toBe('add to dotfiles');
+});
+
 it('moves the file in the way into backups before linking', function () {
     putFile("{$this->root}/.gitconfig", "[repo]\n");
     putFile("{$this->home}/.gitconfig", "[home]\n");

@@ -40,6 +40,21 @@ it('refuses a settings file that is not valid JSON', function () {
     new UserSettings("{$this->dir}/config.json");
 })->throws(RuntimeException::class, 'Invalid JSON in');
 
+it("refuses a settings file it can't read", function () {
+    mkdir($this->dir);
+    file_put_contents("{$this->dir}/config.json", '{}');
+    chmod("{$this->dir}/config.json", 0);
+    // PHPUnit reports file_get_contents()'s warning even under @, so it's silenced for this one call.
+    set_error_handler(fn () => true);
+
+    try {
+        expect(fn () => new UserSettings("{$this->dir}/config.json"))
+            ->toThrow(RuntimeException::class, "Could not read {$this->dir}/config.json");
+    } finally {
+        restore_error_handler();
+    }
+});
+
 it('saves drift item keys per check and reads them back', function () {
     $store = new ReportStore($this->dir);
 

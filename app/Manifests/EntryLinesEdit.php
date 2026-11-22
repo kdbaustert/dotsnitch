@@ -16,11 +16,17 @@ use RuntimeException;
  */
 abstract class EntryLinesEdit extends LineBasedEdit
 {
-    /** Indent, opening quote, the entry, then a comment or nothing. A quoted entry can hold spaces. */
-    private const ENTRY_LINE = '/^(\s*)(?|(["\'])([^"\'#]+)\2|()([^\s"\'#]+))(\s+#.*|\s*)$/';
+    /**
+     * Indent, opening quote, the entry, then a comment or nothing. A quoted entry can hold spaces
+     * and the other kind of quote.
+     */
+    private const ENTRY_LINE = '/^(\s*)(?|(")([^"#]+)"|(\')([^\'#]+)\'|()([^\s"\'#]+))(\s+#.*|\s*)$/';
 
     /** A quoted or bare word, once comments are gone. */
     private const WORD = '/"([^"]*)"|\'([^\']*)\'|([^\s"\']+)/';
+
+    /** A version comparison and the spaces around it, as in `ruff >= 0.6`. */
+    private const SPACED_COMPARISON = '/\s*(===|[~=!<>]=|[<>])\s*/';
 
     /**
      * @param  string  $contents  the whole file, empty for a new one
@@ -51,7 +57,7 @@ abstract class EntryLinesEdit extends LineBasedEdit
 
     /**
      * Writes the spec's entry, indented like the entry above it, and in double quotes when it has
-     * a space, like "1436522307:Transmit 5".
+     * a space or an apostrophe, like "1436522307:Transmit 5".
      *
      * @throws RuntimeException when the file has nowhere to put a new entry
      */
@@ -63,7 +69,7 @@ abstract class EntryLinesEdit extends LineBasedEdit
 
         $entry = $this->spec->entry($package);
         $at = $this->insertionPoint();
-        array_splice($this->lines, $at, 0, [$this->indentAbove($at).(preg_match('/\s/', $entry) ? "\"{$entry}\"" : $entry)]);
+        array_splice($this->lines, $at, 0, [$this->indentAbove($at).(preg_match('/[\s\']/', $entry) ? "\"{$entry}\"" : $entry)]);
     }
 
     /**
@@ -89,13 +95,15 @@ abstract class EntryLinesEdit extends LineBasedEdit
     }
 
     /**
-     * Skips words holding a $, since those are shell variables rather than names.
+     * Skips words holding a $, since those are shell variables rather than names. A comparison
+     * loses the spaces around it first, or `ruff >= 0.6` would read as three words.
      *
      * @return list<Package>
      */
     protected function packagesIn(string $text): array
     {
-        preg_match_all(self::WORD, $this->withoutComment($text), $words, PREG_SET_ORDER);
+        $text = (string) preg_replace(self::SPACED_COMPARISON, '$1', $this->withoutComment($text));
+        preg_match_all(self::WORD, $text, $words, PREG_SET_ORDER);
         $packages = [];
 
         foreach ($words as $word) {

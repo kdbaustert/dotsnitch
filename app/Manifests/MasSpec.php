@@ -16,8 +16,11 @@ final class MasSpec implements PackageSpec
 {
     private const ENTRY = '/^(\d+)(?::.*)?$/';
 
-    /** An id and the name after its colon, quoted or not, up to a quote, comment or line end. */
-    private const TITLED = '/(?<![\w])(\d+):([^"\'#\n]+)/';
+    /**
+     * An id and the name after its colon. A quoted name runs to the closing quote, so it can hold
+     * the other kind. A bare one runs to a quote, comment or line end.
+     */
+    private const TITLED = '/(?|"(\d+):([^"#\n]+)"|\'(\d+):([^\'#\n]+)\'|(?<![\w"\'])(\d+):([^"\'#\n]+))/';
 
     /**
      * @param  array<string, string>  $titles  app name by id, written into new entries
@@ -60,12 +63,13 @@ final class MasSpec implements PackageSpec
     }
 
     /**
-     * id:Name when the name is known, so the line reads like the rest of mas.sh.
+     * id:Name when the name is known, so the line reads like the rest of mas.sh. Only the id when
+     * the name holds a character double quotes don't keep as it is in a script, or a #.
      */
     public function entry(Package $package): string
     {
         $title = $this->titles[$package->name] ?? null;
 
-        return $title === null ? $package->name : "{$package->name}:{$title}";
+        return $title === null || strpbrk($title, '"$`\\#') !== false ? $package->name : "{$package->name}:{$title}";
     }
 }

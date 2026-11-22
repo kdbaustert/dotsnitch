@@ -221,17 +221,19 @@ final class PathResolver
     /**
      * Runs $SHELL as a login, interactive shell so .zprofile and .zshrc both load, then dumps its env.
      * +m turns job control off. With it on, zsh makes itself the terminal's foreground group and
-     * never hands it back, so the next prompt's stty stops dotsnitch with SIGTTOU.
+     * never hands it back, so the next prompt's stty stops dotsnitch with SIGTTOU. fish gets no
+     * +m, since it has no such flag.
      *
      * @return array<string, string>
      */
     private function readLoginEnvironment(): array
     {
         $shell = $this->inherited['SHELL'] ?? '/bin/zsh';
+        $jobControlOff = basename($shell) === 'fish' ? [] : ['+m'];
 
         try {
             $result = $this->shell->run(
-                [$shell, '+m', '-lic', 'printf '.self::MARKER.'; /usr/bin/env -0'],
+                [$shell, ...$jobControlOff, '-lic', 'printf '.self::MARKER.'; /usr/bin/env -0'],
                 self::LOGIN_SHELL_TIMEOUT,
             );
         } catch (ProcessTimedOutException) {

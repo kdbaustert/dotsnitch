@@ -111,7 +111,7 @@ final class JsonRequireEdit implements ManifestEdit
      */
     public function contents(): string
     {
-        $json = json_encode($this->document, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $json = json_encode($this->document, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
 
         if ($this->indent !== self::DEFAULT_INDENT) {
             $json = preg_replace_callback(
