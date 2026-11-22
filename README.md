@@ -79,7 +79,7 @@ dotsnitch --repo=~/dotfiles --checks=brew --dry-run
 
 Plain `dotsnitch` (the `sync` command) asks which checks to run. The first time, it ticks every check that's installed and has a manifest. After that it starts from what you picked last. `--checks=brew,pnpm` skips the question.
 
-You get a live status for each check while it scans. Then there's a summary row per check and a table of everything missing, untracked, deprecated or disabled. If a check can't finish, its row says why, the others still run, and dotsnitch exits with 1.
+You get a live status for each check while it scans. Then there's a summary row per check and a table of everything missing, untracked, deprecated or disabled. Under each package, `sync` says what your dotfiles have and what this Mac has, like "listed in Brewfile" and "not installed". If a check can't finish, its row says why, the others still run, and dotsnitch exits with 1.
 
 ## What it checks
 
@@ -193,7 +193,7 @@ dotsnitch status          # scan and show everything out of sync
 dotsnitch status --new    # only what the last scan didn't have
 ```
 
-Every scan gets saved, by `sync` too, and the next one marks what's new. The line above the table reads like "9 out of sync, 2 new since Nov 20, 09:00", and new rows say "untracked (new)". Something only counts as new if the last scan ran the same check, so turning on a check doesn't flag everything in it. A check that fails keeps what the last scan found, so the count doesn't drop and the next good scan still has something to compare with.
+Every scan gets saved, by `sync` too, and the next one marks what's new. The line above the list reads like "9 out of sync, 2 new since Nov 20, 09:00", or just "9 out of sync" when nothing is new, and new items say "untracked (new)". Something only counts as new if the last scan ran the same check, so turning on a check doesn't flag everything in it. A check that fails keeps what the last scan found, so the count doesn't drop and the next good scan still has something to compare with.
 
 ### Every day, with a notification
 

@@ -41,10 +41,26 @@ it('runs the last picked checks without asking and exits 0 with drift', function
     $this->artisan('status', ['--repo' => "{$this->dir}/repo"])
         ->doesntExpectOutputToContain('boom')
         ->expectsOutputToContain('1 out of sync')
-        ->expectsOutputToContain('formula:jq')
+        ->expectsOutputToContain('untracked  formula:jq')
+        ->expectsOutputToContain('Go through them with dotsnitch sync.')
         ->assertExitCode(0);
 
     expect(app(ReportStore::class)->latest()->checks)->toBe(['other' => ['other:untracked:formula:jq']]);
+});
+
+it('leaves what each side has for a package to sync', function () {
+    $this->artisan('status', ['--repo' => "{$this->dir}/repo"])
+        ->expectsOutputToContain('untracked  formula:jq')
+        ->doesntExpectOutputToContain('not listed')
+        ->assertExitCode(0);
+});
+
+it("doesn't point at sync when everything matches", function () {
+    onlyOtherCheck()->kinds = [];
+
+    $this->artisan('status', ['--repo' => "{$this->dir}/repo"])
+        ->doesntExpectOutputToContain('dotsnitch sync')
+        ->assertExitCode(0);
 });
 
 it('skips anything in the saved checks that isn\'t a check key', function () {
@@ -61,6 +77,16 @@ it('marks what the last scan of that check didn\'t have', function () {
     $this->artisan('status', ['--repo' => "{$this->dir}/repo"])
         ->expectsOutputToContain('1 out of sync, 1 new since Nov 20, 09:00')
         ->expectsOutputToContain('untracked (new)')
+        ->assertExitCode(0);
+});
+
+it('leaves the new count out when nothing is new', function () {
+    previousScan($this->dir, ['other:untracked:formula:jq']);
+
+    $this->artisan('status', ['--repo' => "{$this->dir}/repo"])
+        ->expectsOutputToContain('1 out of sync')
+        ->expectsOutputToContain('untracked  formula:jq')
+        ->doesntExpectOutputToContain('new since')
         ->assertExitCode(0);
 });
 

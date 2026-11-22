@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Concerns;
 
+use App\Contracts\ComparesSides;
 use App\Contracts\Shell;
 use App\Contracts\ShowsDiff;
 use App\Contracts\SyncTarget;
@@ -71,10 +72,9 @@ trait ResolvesDrift
         }
 
         $this->showPlan($changes);
+        $this->showSteps($changes);
 
         if ($this->option('dry-run')) {
-            $this->showSteps($changes);
-
             return $this->failureReport();
         }
 
@@ -82,7 +82,9 @@ trait ResolvesDrift
             return Command::SUCCESS;
         }
 
-        $applied = $this->apply($this->withUninstallsConfirmed($changes));
+        $confirmed = $this->withUninstallsConfirmed($changes);
+        $applied = $this->apply($confirmed);
+        $this->showApplied(count($applied), count($confirmed));
 
         if ($applied !== []) {
             $this->saveRescan($reports, $applied);
@@ -382,23 +384,34 @@ trait ResolvesDrift
     }
 
     /**
+     * One row per change, with the ones that uninstall something in red. The table strips color
+     * tags, so the red goes in as escape codes, and only when the terminal shows color.
+     *
      * @param  list<Change>  $changes
      */
     private function showPlan(array $changes): void
     {
-        table(['Check', 'Item', 'Change'], array_map(fn (Change $change) => [
-            $this->targetOf($change->decision->item)->label(),
-            $change->decision->item->subject->key(),
-            $this->actionsFor($change->decision->item)[$change->decision->action->value],
-        ], $changes));
+        table(['Check', 'Item', 'Change'], array_map(function (Change $change) {
+            $row = [
+                $this->targetOf($change->decision->item)->label(),
+                $change->decision->item->subject->key(),
+                $this->actionsFor($change->decision->item)[$change->decision->action->value],
+            ];
+
+            return $this->uninstalls($change) && $this->output->isDecorated()
+                ? array_map(fn (string $cell) => "\e[31m{$cell}\e[39m", $row)
+                : $row;
+        }, $changes));
     }
 
     /**
+     * The exact commands and edits, shown before the confirm so it's clear what a yes runs.
+     *
      * @param  list<Change>  $changes
      */
     private function showSteps(array $changes): void
     {
-        $this->line('Dry run. These would run, in order:');
+        $this->line($this->option('dry-run') ? 'Dry run. These would run, in order:' : 'These will run, in order:');
 
         foreach ($changes as $change) {
             foreach ($change->steps as $step) {
@@ -416,14 +429,21 @@ trait ResolvesDrift
      */
     private function withUninstallsConfirmed(array $changes): array
     {
-        $uninstalls = fn (Change $change) => in_array($change->decision->action, [Action::Uninstall, Action::Replace], true);
-        $names = array_map(fn (Change $change) => $change->decision->item->subject->key(), array_filter($changes, $uninstalls));
+        $names = array_map(fn (Change $change) => $change->decision->item->subject->key(), array_filter($changes, $this->uninstalls(...)));
 
         if ($names === [] || confirm('Uninstall '.implode(', ', $names).'?', default: false, hint: 'A replace uninstalls the old package once its successor is in.')) {
             return $changes;
         }
 
-        return array_values(array_filter($changes, fn (Change $change) => ! $uninstalls($change)));
+        return array_values(array_filter($changes, fn (Change $change) => ! $this->uninstalls($change)));
+    }
+
+    /**
+     * A replace counts: it uninstalls the old package once its successor is in.
+     */
+    private function uninstalls(Change $change): bool
+    {
+        return in_array($change->decision->action, [Action::Uninstall, Action::Replace], true);
     }
 
     /**
@@ -460,6 +480,33 @@ trait ResolvesDrift
         });
 
         return array_values(array_filter($results));
+    }
+
+    /**
+     * Such as "Applied 4 of 5 changes.", then where this run's backups and its record are.
+     *
+     * @param  int  $planned  0 when every change was an uninstall that got turned down
+     */
+    private function showApplied(int $applied, int $planned): void
+    {
+        if ($planned === 0) {
+            return;
+        }
+
+        $this->line($applied === $planned
+            ? "Applied {$applied} ".($applied === 1 ? 'change' : 'changes').'.'
+            : "Applied {$applied} of {$planned} changes.");
+
+        $backups = $this->laravel->make(ManifestEditor::class)->backupFolder();
+        $record = $this->laravel->make(SyncLog::class)->path();
+
+        if ($backups !== null) {
+            $this->line("Backups are in {$backups}.");
+        }
+
+        if ($record !== null) {
+            $this->line("What it changed is recorded in {$record}.");
+        }
     }
 
     /**
@@ -612,6 +659,25 @@ trait ResolvesDrift
     private function targetOf(DriftItem $item): SyncTarget
     {
         return $this->checksByKey[$item->check]->target;
+    }
+
+    /**
+     * Takes the place of the one in ScansChecks. After the detail come what the dotfiles and this
+     * Mac each have, for a check that can tell, so it's clear which side is out of step.
+     *
+     * @return list<string>
+     */
+    private function notesOn(DriftItem $item): array
+    {
+        $notes = $item->detail === null ? [] : [$item->detail];
+        $target = $this->targetOf($item);
+
+        if ($target instanceof ComparesSides) {
+            $sides = $target->sides($item);
+            array_push($notes, "dotfiles  {$sides['dotfiles']}", "this Mac  {$sides['mac']}");
+        }
+
+        return $notes;
     }
 
     /**

@@ -210,8 +210,8 @@ trait ScansChecks
     }
 
     /**
-     * One summary row per check, a count line, then every drift item, with the new ones marked.
-     * status --new lists only the new ones.
+     * One summary row per check, a count line, then every drift item under its check, with the
+     * new ones marked. status --new lists only the new ones.
      *
      * @param  array<string, DriftReport|RuntimeException>  $reports  keyed by check
      * @return int failure when any check couldn't finish
@@ -230,14 +230,7 @@ trait ScansChecks
             $this->line($this->driftCount(count($items), $saved));
             $listed = $this->listsOnlyNew() ? array_values(array_filter($items, $saved->isNew(...))) : $items;
 
-            if ($listed !== []) {
-                table(['Check', 'Drift', 'Item', 'Detail'], array_map(fn (DriftItem $item) => [
-                    $this->checksByKey[$item->check]->target->label(),
-                    $item->kind->value.($saved->isNew($item) ? ' (new)' : ''),
-                    $item->subject->key(),
-                    $item->detail ?? '',
-                ], $listed));
-            }
+            $this->listDrift($listed, $saved);
         }
 
         $ignored = array_sum(array_map(fn (DriftReport $report) => $report->ignored, $finished));
@@ -255,6 +248,63 @@ trait ScansChecks
         }
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * Each check's name, then its items one to a line: the kind, padded so the items line up, and
+     * the item. Its notes go on the lines below it, so a long path doesn't push the list past the
+     * edge of the terminal.
+     *
+     * @param  list<DriftItem>  $items  in check order
+     */
+    private function listDrift(array $items, SavedScan $saved): void
+    {
+        $byCheck = [];
+
+        foreach ($items as $item) {
+            $byCheck[$item->check][] = $item;
+        }
+
+        foreach ($byCheck as $check => $group) {
+            $kinds = array_map(fn (DriftItem $item) => $item->kind->value.($saved->isNew($item) ? ' (new)' : ''), $group);
+            $width = max(array_map(strlen(...), $kinds));
+
+            $this->newLine();
+            $this->line("<options=bold>{$this->checksByKey[$check]->target->label()}</>");
+
+            foreach ($group as $index => $item) {
+                $this->line(sprintf('  <fg=%s>%s</>  %s', $this->colorOf($item->kind), str_pad($kinds[$index], $width), $item->subject->key()));
+
+                foreach ($this->notesOn($item) as $note) {
+                    $this->line(str_repeat(' ', $width + 4)."<fg=gray>{$note}</>");
+                }
+            }
+        }
+    }
+
+    /**
+     * The gray lines under an item: its detail, when it has one. ResolvesDrift has its own, so
+     * sync says more than status.
+     *
+     * @return list<string>
+     */
+    private function notesOn(DriftItem $item): array
+    {
+        return $item->detail === null ? [] : [$item->detail];
+    }
+
+    /**
+     * Red for a package this Mac lacks or a link that's wrong, yellow for a link that isn't there
+     * yet, cyan for what the dotfiles lack, and no color for what's only worth knowing.
+     */
+    private function colorOf(DriftKind $kind): string
+    {
+        return match ($kind) {
+            DriftKind::NotLinked => 'yellow',
+            DriftKind::Untracked => 'cyan',
+            DriftKind::Missing, DriftKind::Conflict, DriftKind::WrongTarget, DriftKind::Broken => 'red',
+            DriftKind::Version, DriftKind::Deprecated, DriftKind::Disabled => 'default',
+        };
     }
 
     /**
@@ -276,11 +326,12 @@ trait ScansChecks
     }
 
     /**
-     * Such as "9 out of sync, 2 new since Nov 20, 09:00", or just "9 out of sync" on a first scan.
+     * Such as "9 out of sync, 2 new since Nov 20, 09:00", or just "9 out of sync" on a first scan
+     * and when nothing is new. status --new says "0 new", since that's the answer it was asked for.
      */
     private function driftCount(int $count, SavedScan $saved): string
     {
-        return $saved->since === null
+        return $saved->since === null || ($saved->newCount() === 0 && ! $this->listsOnlyNew())
             ? "{$count} out of sync"
             : "{$count} out of sync, {$saved->newCount()} new since {$saved->since->format('M j, H:i')}";
     }

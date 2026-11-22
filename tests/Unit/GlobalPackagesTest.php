@@ -165,6 +165,20 @@ it('checks a Composerfile against composer global show', function () {
     ]);
 });
 
+it('says which manifests list a package and which version is installed', function () {
+    $mac = new GlobalsMac;
+    $base = $mac->manifest('Composerfile', "laravel/installer:^5\npsr/log\n");
+    $overlay = $mac->manifest('Composerfile.mac', "laravel/installer\n");
+    $composer = composerOn($mac);
+
+    $report = $composer->scan([$base, $overlay], fn () => null);
+
+    expect($composer->sides(globalItem($report, 'missing:package:laravel/installer')))
+        ->toBe(['dotfiles' => 'listed in Composerfile, Composerfile.mac', 'mac' => 'not installed'])
+        ->and($composer->sides(globalItem($report, 'untracked:package:fzaninotto/faker')))
+        ->toBe(['dotfiles' => 'not listed', 'mac' => 'installed v1.5.0']);
+});
+
 it('reads composer.json require without platform packages, whatever the case', function () {
     $mac = new GlobalsMac;
     $manifest = $mac->manifest('composer/composer.json', '{"require": {"php": ">=8.2", "ext-mbstring": "*", "PSR/Log": "^3.0", "fzaninotto/faker": "^1.5"}}');

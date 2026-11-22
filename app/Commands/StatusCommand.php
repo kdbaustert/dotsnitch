@@ -55,8 +55,8 @@ final class StatusCommand extends Command
     }
 
     /**
-     * Scans, saves the report for the next run and shell prompts, prints it, and with --notify
-     * posts what's new.
+     * Scans, saves the report for the next run and shell prompts, prints it with where to go
+     * next, and with --notify posts what's new.
      *
      * @return int failure when a check couldn't finish, or --notify couldn't get the lock. Drift
      *             alone isn't a failure, so a schedule's log doesn't show every day as an error.
@@ -89,6 +89,11 @@ final class StatusCommand extends Command
         $reports = $this->scanEach($selected);
         $saved = $this->saveScan($reports);
         $result = $this->report($reports, $saved);
+
+        if ($this->itemsOf($reports) !== []) {
+            $this->newLine();
+            $this->line('Go through them with dotsnitch sync.');
+        }
 
         if ($notify) {
             $this->notifyNew($reports, $saved);

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Contracts\ComparesSides;
 use App\Contracts\SyncTarget;
 use App\Data\Package;
 use App\Support\Machine;
@@ -30,7 +31,7 @@ uses(TestCase::class)->in('Feature');
  */
 function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarget
 {
-    return new class($key, $fails, $available) implements SyncTarget
+    return new class($key, $fails, $available) implements ComparesSides, SyncTarget
     {
         /** @var list<string> */
         public array $ran = [];
@@ -95,6 +96,14 @@ function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarge
                 fn (DriftKind $kind) => new DriftItem($this->key, $kind, new Package('jq', 'formula')),
                 $this->kinds,
             ));
+        }
+
+        /**
+         * The same two sides every time: jq is installed and no manifest lists it.
+         */
+        public function sides(DriftItem $item): array
+        {
+            return ['dotfiles' => 'not listed', 'mac' => 'installed 1.7.1'];
         }
 
         /**

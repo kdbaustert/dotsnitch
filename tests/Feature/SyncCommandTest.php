@@ -73,6 +73,16 @@ it('starts from the last picked checks, and only reports without a terminal', fu
     expect($this->settings->get('checks'))->toBe(['other']);
 });
 
+it('says under each package what the dotfiles and this Mac have', function () {
+    onlyOtherCheck();
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other', '--no-interaction' => true])
+        ->expectsOutputToContain('untracked  formula:jq')
+        ->expectsOutputToContain('dotfiles  not listed')
+        ->expectsOutputToContain('this Mac  installed 1.7.1')
+        ->assertExitCode(1);
+});
+
 it('holds the status lock, so a status run waits for the sync to finish', function () {
     onlyOtherCheck();
 
@@ -155,6 +165,7 @@ it('drops an uninstall when the second confirm says no', function () {
         ->expectsQuestion('Other, untracked: formula:jq', 'uninstall')
         ->expectsConfirmation('Apply these changes?', 'yes')
         ->expectsConfirmation('Uninstall formula:jq?', 'no')
+        ->doesntExpectOutputToContain('Applied')
         ->assertExitCode(0);
 
     expect($other->ran)->toBe([]);
@@ -173,6 +184,24 @@ it('keeps a choice for a package when its other item is skipped', function () {
         ->assertExitCode(0);
 
     expect(file_get_contents("{$this->dir}/repo/Brewfile"))->toBe("brew \"jq\"\n");
+});
+
+it('shows the commands before it asks, then how many it applied and where the backups and record are', function () {
+    onlyOtherCheck();
+    file_put_contents("{$this->dir}/repo/Brewfile", "brew \"mpv\"\n");
+    answerWithQuestions();
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other'])
+        ->expectsQuestion('How do you want to resolve it?', 'each')
+        ->expectsQuestion('Other, untracked: formula:jq', 'add')
+        ->expectsQuestion('Add Other items to which file?', 'Brewfile')
+        ->expectsOutputToContain('These will run, in order:')
+        ->expectsOutputToContain('Add formula:jq to Brewfile')
+        ->expectsConfirmation('Apply these changes?', 'yes')
+        ->expectsOutputToContain('Applied 1 change.')
+        ->expectsOutputToContain("Backups are in {$this->dir}/backups.")
+        ->expectsOutputToContain("What it changed is recorded in {$this->dir}/state/syncs/")
+        ->assertExitCode(0);
 });
 
 it('logs each step with what it takes to put back', function () {
@@ -211,6 +240,7 @@ it('logs a step that failed, with its error', function () {
         ->expectsQuestion('Other, untracked: formula:jq', 'uninstall')
         ->expectsConfirmation('Apply these changes?', 'yes')
         ->expectsConfirmation('Uninstall formula:jq?', 'yes')
+        ->expectsOutputToContain('Applied 0 of 1 changes.')
         ->expectsOutputToContain('brew uninstall --formula jq: jq is in use')
         ->assertExitCode(1);
 

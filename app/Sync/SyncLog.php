@@ -75,6 +75,16 @@ final class SyncLog
     }
 
     /**
+     * @return ?string null until the first step is logged
+     */
+    public function path(): ?string
+    {
+        return $this->startedAt === null
+            ? null
+            : $this->directory.'/'.self::DIRECTORY.'/'.$this->startedAt->format('Y-m-d\THis').'.json';
+    }
+
+    /**
      * @param  array<string, mixed>  $outcome  the effect or the failure
      */
     private function add(Decision $decision, Step $step, array $outcome): void
@@ -94,13 +104,12 @@ final class SyncLog
     private function save(): void
     {
         $this->startedAt ??= new DateTimeImmutable;
-        $directory = $this->directory.'/'.self::DIRECTORY;
 
-        JsonFile::write($directory.'/'.$this->startedAt->format('Y-m-d\THis').'.json', [
+        JsonFile::write($this->path(), [
             'started_at' => $this->startedAt->format(DATE_ATOM),
             'steps' => $this->steps,
             'commit' => $this->commit,
         ]);
-        JsonFile::keepNewest($directory, self::KEPT);
+        JsonFile::keepNewest($this->directory.'/'.self::DIRECTORY, self::KEPT);
     }
 }

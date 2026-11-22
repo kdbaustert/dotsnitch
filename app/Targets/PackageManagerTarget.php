@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Targets;
 
+use App\Contracts\ComparesSides;
 use App\Contracts\ManifestEdit;
 use App\Contracts\ManifestFormat;
 use App\Contracts\PackageSpec;
@@ -29,7 +30,7 @@ use RuntimeException;
  * Diffs what the manifests list against what's installed, and turns decisions into install
  * commands and manifest edits. Subclasses say how to read each side and which commands to run.
  */
-abstract class PackageManagerTarget implements SyncTarget
+abstract class PackageManagerTarget implements ComparesSides, SyncTarget
 {
     /** Seconds. An install can build from source, so it gets far longer than a lookup. */
     private const INSTALL_TIMEOUT = 1800;
@@ -42,6 +43,9 @@ abstract class PackageManagerTarget implements SyncTarget
 
     /** @var array<string, Package> what the last scan() found installed, by Package key */
     private array $installedByKey = [];
+
+    /** @var array<string, list<string>> the manifests the last scan() found each package in, as file names by Package key */
+    private array $listedIn = [];
 
     /**
      * @param  PathResolver  $paths  finds a tool even when it isn't on the PATH dotsnitch started with
@@ -83,20 +87,28 @@ abstract class PackageManagerTarget implements SyncTarget
      */
     public function scan(array $manifests, callable $log): DriftReport
     {
-        $listed = collect();
+        $entries = [];
 
         foreach ($manifests as $manifest) {
             $log('Reading '.basename($manifest));
-            $entries = $this->format($manifest)->read($manifest);
-            $log(basename($manifest)." lists {$entries->count()}");
-            $listed = $listed->concat($entries);
+            $entries[$manifest] = $this->format($manifest)->read($manifest);
+            $log(basename($manifest)." lists {$entries[$manifest]->count()}");
         }
 
         $log("Listing installed {$this->label()} packages");
         $installed = $this->installed()->keyBy(fn (Package $package) => $package->key());
         $this->installedByKey = $installed->all();
         $log("{$installed->count()} installed");
-        $listed = $listed->map($this->canonical(...))->keyBy(fn (Package $package) => $package->key());
+        $listed = collect();
+        $this->listedIn = [];
+
+        foreach ($entries as $manifest => $packages) {
+            foreach ($packages->map($this->canonical(...)) as $package) {
+                $listed[$package->key()] = $package;
+                $this->listedIn[$package->key()][] = basename($manifest);
+            }
+        }
+
         $tracked = [...$listed->keys(), ...$this->trackedImplicitly($listed)];
 
         $missing = $listed->diffKeys($installed)
@@ -155,6 +167,25 @@ abstract class PackageManagerTarget implements SyncTarget
             Action::Ignore, Action::Skip => [],
             default => throw new LogicException("{$this->label()} can't {$decision->action->value} a package"),
         };
+    }
+
+    /**
+     * Read from the last scan(), so a deprecated entry says whether it's installed too.
+     */
+    public function sides(DriftItem $item): array
+    {
+        $key = $this->packageOf($item)->key();
+        $files = array_unique($this->listedIn[$key] ?? []);
+        $installed = $this->installedByKey[$key] ?? null;
+
+        return [
+            'dotfiles' => $files === [] ? 'not listed' : 'listed in '.implode(', ', $files),
+            'mac' => match (true) {
+                $installed === null => 'not installed',
+                $installed->version === null => 'installed',
+                default => "installed {$installed->version}",
+            },
+        ];
     }
 
     /**

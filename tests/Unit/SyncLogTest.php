@@ -25,6 +25,7 @@ it('saves the same file again after every step, so a run that dies keeps what it
     $log = new SyncLog($this->dir);
     $effect = ['kind' => 'command', 'command' => ['brew', 'install', '--formula', 'mpv']];
     $ran = ['item' => 'brew:missing:formula:mpv', 'action' => 'install', 'description' => 'brew install --formula mpv', 'effect' => $effect];
+    $pathBefore = $log->path();
 
     $log->ran($this->install, $this->step, $effect);
     [$file] = glob("{$this->dir}/syncs/*.json");
@@ -32,6 +33,8 @@ it('saves the same file again after every step, so a run that dies keeps what it
     $log->failed($this->install, $this->step, 'Error: mpv: no bottle');
 
     expect($afterOne['steps'])->toBe([$ran])
+        ->and($pathBefore)->toBeNull()
+        ->and($log->path())->toBe($file)
         ->and(glob("{$this->dir}/syncs/*.json"))->toBe([$file])
         ->and(JsonFile::read($file))->toBe([
             'started_at' => $afterOne['started_at'],

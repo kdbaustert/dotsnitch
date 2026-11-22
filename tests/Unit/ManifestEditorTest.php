@@ -24,6 +24,7 @@ it('backs up a file once, before its first change', function () {
 
     expect(file_get_contents($brewfile))->toBe("brew \"jq\"\nbrew \"mpv\"\ncask \"zed\"\n")
         ->and(file_get_contents("{$this->dir}/backups{$brewfile}"))->toBe("brew \"jq\"\n")
+        ->and($this->editor->backupFolder())->toBe("{$this->dir}/backups")
         ->and($this->editor->changed())->toBe([$brewfile]);
 });
 
@@ -51,6 +52,7 @@ it('creates a new file without a backup and leaves an unchanged one alone', func
 
     expect(file_get_contents($overlay))->toBe("brew \"mpv\"\n")
         ->and(is_dir("{$this->dir}/backups"))->toBeFalse()
+        ->and($this->editor->backupFolder())->toBeNull()
         ->and($this->editor->changed())->toBe([$overlay]);
 });
 

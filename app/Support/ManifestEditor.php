@@ -78,6 +78,14 @@ final class ManifestEditor
     }
 
     /**
+     * @return ?string this run's backup folder, null while nothing is in it
+     */
+    public function backupFolder(): ?string
+    {
+        return is_dir($this->backups) ? $this->backups : null;
+    }
+
+    /**
      * Where $path goes in the backup folder. The full path is kept, so two files named Brewfile
      * don't collide.
      */
