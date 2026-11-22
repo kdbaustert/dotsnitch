@@ -10,7 +10,6 @@ use App\Data\Package;
 use App\Support\LaunchAgent;
 use App\Support\Notifier;
 use App\Support\StatusLock;
-use App\Support\UserSettings;
 use App\Sync\DriftItem;
 use App\Sync\DriftReport;
 use App\Sync\ReportStore;
@@ -36,7 +35,7 @@ final class StatusCommand extends Command
     // --quiet never gets here: the entry script answers it from the saved report (see QuietStatus).
     protected $signature = 'status
         {--repo= : Path to your dotfiles directory}
-        {--checks= : Checks to run, comma-separated (such as brew,npm); defaults to the ones sync last ran}
+        {--checks= : Checks to run, comma-separated (such as brew,npm); defaults to every one that\'s installed and has a manifest}
         {--new : List only what the last scan didn\'t have}
         {--notify : Post a macOS notification when anything is new}
         {--max-age=24h : With --quiet, how old the saved report can get before a refresh starts in the background}';
@@ -63,7 +62,7 @@ final class StatusCommand extends Command
      *
      * @throws InvalidArgumentException when --checks names a check that doesn't exist or can't run
      */
-    public function handle(UserSettings $settings, StatusLock $lock): int
+    public function handle(StatusLock $lock): int
     {
         // --notify is how the daily run starts, so it looks after the daily run's log.
         $notify = (bool) $this->option('notify');
@@ -81,9 +80,8 @@ final class StatusCommand extends Command
         }
 
         $checks = $this->allChecks();
-        $byKey = $this->byKey($checks);
         $selected = $this->option('checks') === null
-            ? array_values(array_intersect_key($byKey, array_flip($this->defaultCheckKeys($byKey, $settings))))
+            ? array_values(array_filter($checks, fn (Check $check) => $check->isReady()))
             : $this->checksFromOption($checks);
 
         $reports = $this->scanEach($selected);

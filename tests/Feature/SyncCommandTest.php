@@ -88,6 +88,16 @@ it('starts from the last picked checks, and only reports without a terminal', fu
     expect($this->settings->get('checks'))->toBe(['other']);
 });
 
+it('skips anything in the saved checks that isn\'t a check key', function () {
+    onlyOtherCheck();
+    $this->settings->set('checks', [['other'], null, 'other']);
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--no-interaction' => true])
+        ->doesntExpectOutputToContain('boom')
+        ->expectsOutputToContain('1 untracked')
+        ->assertExitCode(1);
+});
+
 it('says under each package what the dotfiles and this Mac have', function () {
     onlyOtherCheck();
 

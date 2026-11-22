@@ -14,7 +14,7 @@ It runs on Apple Silicon and Intel Macs and works out the architecture, Homebrew
 There's no full release yet, only a beta. The install command below starts working with the first full release. Until then, install the beta or run it from source (see [Development](#development)):
 
 ```sh
-beta=https://github.com/kdbaustert/dotsnitch/releases/download/v0.1.0-beta.1
+beta=https://github.com/kdbaustert/dotsnitch/releases/download/v0.1.0-beta.2
 curl -fsSL "$beta/install.sh" | DOTSNITCH_RELEASES="$beta" sh
 ```
 
@@ -191,7 +191,7 @@ It never fixes anything this way. It reports, and exits with 1 if it found drift
 
 ## Daily use
 
-`status` scans and reports like `sync`, but never asks anything, even in a terminal. It exits with 0 when all it found was drift, and with 1 only when a check couldn't finish. It runs the checks `sync` ran last unless you pass `--checks=`.
+`status` scans and reports like `sync`, but never asks anything, even in a terminal. It exits with 0 when all it found was drift, and with 1 only when a check couldn't finish. It runs every check that's installed and has a manifest, whatever you last picked in `sync`. `--checks=brew,npm` narrows it.
 
 ```sh
 dotsnitch status          # scan and show everything out of sync

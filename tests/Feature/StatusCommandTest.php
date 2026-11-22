@@ -7,12 +7,16 @@ use App\Support\Notifier;
 use App\Support\PathResolver;
 use App\Support\StatusLock;
 use App\Sync\ReportStore;
+use App\Targets\Homebrew;
+use App\Targets\Symlinks;
 use Tests\Fakes\FakeShell;
 
 beforeEach(function () {
     fakeMac($this);
-    onlyOtherCheck();
-    $this->settings->set('checks', ['other']);
+    $this->other = onlyOtherCheck();
+    // Not installed, so status leaves them out and only the Other check runs.
+    $this->app->instance(Homebrew::class, fakeTarget('brew', fails: false, available: false));
+    $this->app->instance(Symlinks::class, fakeTarget('symlinks', fails: false, available: false));
     $this->notifications = new FakeShell;
     $this->app->instance(Notifier::class, new Notifier($this->notifications, app(PathResolver::class)));
     $this->app->instance(LaunchAgent::class, new LaunchAgent(new FakeShell, $this->dir, "{$this->dir}/state/schedule.log"));
@@ -37,9 +41,10 @@ function previousScan(string $dir, array $other): void
     ]));
 }
 
-it('runs the last picked checks without asking and exits 0 with drift', function () {
+it('runs every ready check without asking, whatever sync last picked, and exits 0 with drift', function () {
+    $this->settings->set('checks', ['brew']);
+
     $this->artisan('status', ['--repo' => "{$this->dir}/repo"])
-        ->doesntExpectOutputToContain('boom')
         ->expectsOutputToContain('1 out of sync')
         ->expectsOutputToContain('untracked  formula:jq')
         ->expectsOutputToContain('Go through them with dotsnitch sync.')
@@ -56,7 +61,7 @@ it('leaves what each side has for a package to sync', function () {
 });
 
 it('prints a name that looks like a color tag as it is', function () {
-    onlyOtherCheck()->package = 'a<info>b';
+    $this->other->package = 'a<info>b';
 
     $this->artisan('status', ['--repo' => "{$this->dir}/repo"])
         ->expectsOutputToContain('untracked  formula:a<info>b')
@@ -64,18 +69,10 @@ it('prints a name that looks like a color tag as it is', function () {
 });
 
 it("doesn't point at sync when everything matches", function () {
-    onlyOtherCheck()->kinds = [];
+    $this->other->kinds = [];
 
     $this->artisan('status', ['--repo' => "{$this->dir}/repo"])
         ->doesntExpectOutputToContain('dotsnitch sync')
-        ->assertExitCode(0);
-});
-
-it('skips anything in the saved checks that isn\'t a check key', function () {
-    $this->settings->set('checks', [['other'], null, 'other']);
-
-    $this->artisan('status', ['--repo' => "{$this->dir}/repo"])
-        ->expectsOutputToContain('1 out of sync')
         ->assertExitCode(0);
 });
 
