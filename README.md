@@ -79,7 +79,7 @@ dotsnitch --repo=~/dotfiles --checks=brew --dry-run
 
 Plain `dotsnitch` (the `sync` command) asks which checks to run. The first time, it ticks every check that's installed and has a manifest. After that it starts from what you picked last. `--checks=brew,pnpm` skips the question.
 
-You get a live status for each check while it scans. Then there's a summary row per check and a table of everything missing, untracked, deprecated or disabled. Under each package, `sync` says what your dotfiles have and what this Mac has, like "listed in Brewfile" and "not installed". If a check can't finish, its row says why, the others still run, and dotsnitch exits with 1.
+You get a live status for each check while it scans. Then there's a summary row per check and a table of everything not installed, untracked, deprecated or disabled. Under each package, `sync` says what your dotfiles have and what this Mac has, like "listed in Brewfile" and "not installed". If a check can't finish, its row says why, the others still run, and dotsnitch exits with 1.
 
 ## What it checks
 
@@ -114,7 +114,7 @@ A manifest with your hostname on the end, like `Brewfile.kennys-macbook-pro`, is
 
 ### Notes per check
 
-- **Homebrew:** dependencies don't count as untracked, and an alias or old name in your Brewfile matches the formula it points to. A name Homebrew doesn't know shows as missing, with a note saying so. `mas` lines in a Brewfile aren't read yet.
+- **Homebrew:** dependencies don't count as untracked, and an alias or old name in your Brewfile matches the formula it points to. A name Homebrew doesn't know shows as not installed, with a note saying so. `mas` lines in a Brewfile aren't read yet.
 - **Composer** only looks at direct requires (`composer global show --direct`), so dependencies never show up as untracked. That's true when your manifest is Composer's own `composer.json` linked in from your dotfiles, too.
 - **npm** never reports the npm that's running the check, wherever it's installed.
 - **pnpm** installs one package per `pnpm add -g`. pnpm 11 keeps the packages from each `add -g` call together in a group, so an untracked package in a shared group tells you which packages it shares it with. If pnpm's global bin dir isn't on your login PATH, the scan tells you to run `pnpm setup`.
@@ -163,7 +163,7 @@ When it's done it scans again and saves the new report. If it edited files in a 
 
 ## Ignoring things on one Mac
 
-Ignore saves the item in this Mac's `config.json` under `ignore.<check>`. That way a work Mac and a personal Mac can share one Brewfile and each skip what it doesn't need. Your dotfiles don't change and the other Mac never sees it. An ignored package stays hidden whether it's missing or untracked, and an ignored link is hidden by its path in `~`.
+Ignore saves the item in this Mac's `config.json` under `ignore.<check>`. That way a work Mac and a personal Mac can share one Brewfile and each skip what it doesn't need. Your dotfiles don't change and the other Mac never sees it. An ignored package stays hidden whether it's not installed or untracked, and an ignored link is hidden by its path in `~`.
 
 Ignored items are left out of the report. The check's row shows how many ("In sync (2 ignored)") and the report ends with a line like "4 ignored on this Mac". To see them:
 

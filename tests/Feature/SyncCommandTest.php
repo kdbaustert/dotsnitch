@@ -131,7 +131,7 @@ it('adds to a new overlay for this Mac, rescans and saves the report', function 
 
     $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other'])
         ->expectsQuestion('How do you want to resolve it?', 'review')
-        ->expectsQuestion('Pick the untracked Other items to add to dotfiles', ['formula:jq'])
+        ->expectsQuestion('Other, untracked: pick the ones to add to dotfiles', ['formula:jq'])
         ->expectsQuestion('Add Other items to which file?', 'Brewfile.mac')
         ->expectsConfirmation('Apply these changes?', 'yes')
         ->assertExitCode(0);
@@ -148,7 +148,7 @@ it('adds to a setup script without offering an overlay, since a new one has no a
 
     $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other'])
         ->expectsQuestion('How do you want to resolve it?', 'review')
-        ->expectsQuestion('Pick the untracked Other items to add to dotfiles', ['formula:jq'])
+        ->expectsQuestion('Other, untracked: pick the ones to add to dotfiles', ['formula:jq'])
         ->expectsConfirmation('Apply these changes?', 'yes')
         ->assertExitCode(0);
 
@@ -169,6 +169,17 @@ it('drops an uninstall when the second confirm says no', function () {
         ->assertExitCode(0);
 
     expect($other->ran)->toBe([]);
+});
+
+it('calls a listed package this Mac lacks "not installed" in the summary and the question', function () {
+    onlyOtherCheck()->kinds = [DriftKind::Missing];
+    answerWithQuestions();
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other'])
+        ->expectsOutputToContain('1 not installed')
+        ->expectsQuestion('How do you want to resolve it?', 'each')
+        ->expectsQuestion('Other, not installed: formula:jq', 'skip')
+        ->assertExitCode(0);
 });
 
 it('keeps a choice for a package when its other item is skipped', function () {
@@ -267,7 +278,7 @@ it('offers to commit the manifests it changed when the repo is inside a git chec
 
     $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other'])
         ->expectsQuestion('How do you want to resolve it?', 'review')
-        ->expectsQuestion('Pick the untracked Other items to add to dotfiles', ['formula:jq'])
+        ->expectsQuestion('Other, untracked: pick the ones to add to dotfiles', ['formula:jq'])
         ->expectsQuestion('Add Other items to which file?', 'Brewfile')
         ->expectsConfirmation('Apply these changes?', 'yes')
         ->expectsOutputToContain('Brewfile | 1 +')
@@ -290,7 +301,7 @@ it("doesn't offer a commit when the repo isn't in a git checkout", function () {
 
     $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other'])
         ->expectsQuestion('How do you want to resolve it?', 'review')
-        ->expectsQuestion('Pick the untracked Other items to add to dotfiles', ['formula:jq'])
+        ->expectsQuestion('Other, untracked: pick the ones to add to dotfiles', ['formula:jq'])
         ->expectsQuestion('Add Other items to which file?', 'Brewfile')
         ->expectsConfirmation('Apply these changes?', 'yes')
         ->assertExitCode(0);

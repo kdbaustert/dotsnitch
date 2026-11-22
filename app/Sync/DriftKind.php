@@ -15,4 +15,13 @@ enum DriftKind: string
     case Conflict = 'conflict';
     case WrongTarget = 'wrong-target';
     case Broken = 'broken';
+
+    /**
+     * What the drift list and the prompts call it. "missing" alone doesn't say which side lacks
+     * the package, and the value has to stay as it is for saved scans and sync records.
+     */
+    public function label(): string
+    {
+        return $this === self::Missing ? 'not installed' : $this->value;
+    }
 }

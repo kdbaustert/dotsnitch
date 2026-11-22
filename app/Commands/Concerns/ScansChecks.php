@@ -266,7 +266,7 @@ trait ScansChecks
         }
 
         foreach ($byCheck as $check => $group) {
-            $kinds = array_map(fn (DriftItem $item) => $item->kind->value.($saved->isNew($item) ? ' (new)' : ''), $group);
+            $kinds = array_map(fn (DriftItem $item) => $item->kind->label().($saved->isNew($item) ? ' (new)' : ''), $group);
             $width = max(array_map(strlen(...), $kinds));
 
             $this->newLine();
@@ -345,7 +345,7 @@ trait ScansChecks
     }
 
     /**
-     * Such as "In sync", "In sync (2 ignored)", "1 missing, 8 untracked" or "Failed: brew info failed: ...".
+     * Such as "In sync", "In sync (2 ignored)", "1 not installed, 8 untracked" or "Failed: brew info failed: ...".
      */
     private function statusOf(DriftReport|RuntimeException $report): string
     {
@@ -363,7 +363,7 @@ trait ScansChecks
             $count = count($report->itemsOfKind($kind));
 
             if ($count > 0) {
-                $counts[] = "{$count} {$kind->value}";
+                $counts[] = "{$count} {$kind->label()}";
             }
         }
 

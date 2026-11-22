@@ -172,7 +172,7 @@ trait ResolvesDrift
         }
 
         $picked = multiselect(
-            "Pick the {$first->kind->value} {$this->targetOf($first)->label()} items to ".lcfirst($suggestion->label()),
+            "{$this->targetOf($first)->label()}, {$first->kind->label()}: pick the ones to ".lcfirst($suggestion->label()),
             $options,
             default: array_keys($options),
             scroll: 10,
@@ -244,7 +244,7 @@ trait ResolvesDrift
     private function decideOne(DriftItem $item): Action
     {
         return $this->askUntilDecided(fn () => select(
-            "{$this->targetOf($item)->label()}, {$item->kind->value}: {$item->subject->key()}",
+            "{$this->targetOf($item)->label()}, {$item->kind->label()}: {$item->subject->key()}",
             $this->actionsFor($item),
             default: $this->suggestionFor($item)->value,
             hint: $item->detail ?? '',
