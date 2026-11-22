@@ -338,15 +338,15 @@ trait ScansChecks
     }
 
     /**
-     * Red for a package this Mac lacks or a link that's wrong, yellow for a link that isn't there
-     * yet, cyan for what the dotfiles lack, and no color for what's only worth knowing.
+     * Red for what this Mac lacks or a link that's wrong, yellow for a link that isn't there yet,
+     * cyan for what the dotfiles or their remote lack, and no color for what's only worth knowing.
      */
     private function colorOf(DriftKind $kind): string
     {
         return match ($kind) {
             DriftKind::NotLinked => 'yellow',
-            DriftKind::Untracked => 'cyan',
-            DriftKind::Missing, DriftKind::Conflict, DriftKind::WrongTarget, DriftKind::Broken => 'red',
+            DriftKind::Untracked, DriftKind::Uncommitted, DriftKind::Unpushed => 'cyan',
+            DriftKind::Missing, DriftKind::Conflict, DriftKind::WrongTarget, DriftKind::Broken, DriftKind::Behind, DriftKind::Differs => 'red',
             DriftKind::Version, DriftKind::Deprecated, DriftKind::Disabled => 'default',
         };
     }

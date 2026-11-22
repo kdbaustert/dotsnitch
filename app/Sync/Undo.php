@@ -4,19 +4,26 @@ declare(strict_types=1);
 
 namespace App\Sync;
 
+use App\Contracts\Shell;
 use App\Support\AtomicFile;
 use RuntimeException;
 
 /**
- * Turns the steps of a sync log into the steps that take them back. Files and links only: a
- * command that installed or removed a package has no step here.
+ * Turns the steps of a sync log into the steps that take them back. Files and links come from
+ * steps(), and installs and uninstalls from packageSteps(), so the caller chooses whether
+ * packages are touched.
  *
- * Each step looks at the path again before it touches it, and fails when the path isn't how the
- * sync left it.
+ * Each file or link step looks at the path again before it touches it, and fails when the path
+ * isn't how the sync left it.
  */
 final class Undo
 {
-    public function __construct(private readonly IgnoreList $ignores) {}
+    private const COMMAND_TIMEOUT = 1800;
+
+    public function __construct(
+        private readonly IgnoreList $ignores,
+        private readonly Shell $shell,
+    ) {}
 
     /**
      * @param  list<array<string, mixed>>  $logged  a log's steps, in the order they ran
@@ -59,20 +66,75 @@ final class Undo
     }
 
     /**
+     * The opposite of each install and uninstall the sync ran. An uninstalled package comes back
+     * at the current version, not the one that was removed.
+     *
      * @param  list<array<string, mixed>>  $logged
-     * @return list<string> the commands the sync ran, which stay as they are
+     * @return list<Step> last command first
      */
-    public function commands(array $logged): array
+    public function packageSteps(array $logged): array
     {
-        $commands = [];
+        $steps = [];
 
-        foreach ($logged as $entry) {
-            if (($entry['effect']['kind'] ?? null) === 'command') {
-                $commands[] = Step::commandLine($entry['effect']['command']);
+        foreach (array_reverse($logged) as $entry) {
+            $effect = $entry['effect'] ?? [];
+
+            foreach ($effect['undo'] ?? [] as $command) {
+                $steps[] = $this->commandStep($command, $effect['environment'] ?? []);
             }
         }
 
-        return $commands;
+        return $steps;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $logged
+     * @return list<string> every command the sync ran
+     */
+    public function commands(array $logged): array
+    {
+        return array_map(
+            fn (array $entry) => Step::commandLine($entry['effect']['command']),
+            $this->commandEntries($logged),
+        );
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $logged
+     * @return list<string> the commands packageSteps() has nothing for, such as a reinstall at a
+     *                      pinned version, or any command in a record that predates package undo
+     */
+    public function oneWayCommands(array $logged): array
+    {
+        $oneWay = array_filter($this->commandEntries($logged), fn (array $entry) => ! isset($entry['effect']['undo']));
+
+        return array_map(fn (array $entry) => Step::commandLine($entry['effect']['command']), array_values($oneWay));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $logged
+     * @return list<array<string, mixed>>
+     */
+    private function commandEntries(array $logged): array
+    {
+        return array_values(array_filter($logged, fn (array $entry) => ($entry['effect']['kind'] ?? null) === 'command'));
+    }
+
+    /**
+     * @param  list<string>  $command
+     * @param  array<string, string>  $environment
+     */
+    private function commandStep(array $command, array $environment): Step
+    {
+        return new Step(Step::commandLine($command), function () use ($command, $environment) {
+            $result = $this->shell->run($command, self::COMMAND_TIMEOUT, $environment);
+
+            if (! $result->successful()) {
+                throw new RuntimeException(trim($result->errorOutput) ?: trim($result->output) ?: "Exited with code {$result->exitCode}");
+            }
+
+            return [];
+        });
     }
 
     /**

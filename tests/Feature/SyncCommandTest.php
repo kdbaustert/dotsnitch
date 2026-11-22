@@ -121,13 +121,13 @@ it('rejects an unknown check in --checks', function () {
     $this->app->instance(Homebrew::class, fakeTarget('brew', fails: false));
 
     $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'brew,nope']);
-})->throws(InvalidArgumentException::class, 'Unknown check "nope" in --checks. Checks: brew, mas, composer, npm, pnpm, gh, pipx, uv, cargo, vscode, symlinks.');
+})->throws(InvalidArgumentException::class, 'Unknown check "nope" in --checks. Checks: brew, mas, composer, npm, pnpm, gh, pipx, uv, cargo, mise, vscode, defaults, symlinks, repo.');
 
 it('rejects --checks with no check in it', function () {
     $this->app->instance(Homebrew::class, fakeTarget('brew', fails: false));
 
     $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => ',']);
-})->throws(InvalidArgumentException::class, '--checks needs at least one check. Checks: brew, mas, composer, npm, pnpm, gh, pipx, uv, cargo, vscode, symlinks.');
+})->throws(InvalidArgumentException::class, '--checks needs at least one check. Checks: brew, mas, composer, npm, pnpm, gh, pipx, uv, cargo, mise, vscode, defaults, symlinks, repo.');
 
 it("rejects a check in --checks whose tool isn't installed", function () {
     $this->app->instance(Homebrew::class, fakeTarget('brew', fails: false, available: false));

@@ -2,11 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Contracts\Shell;
 use App\Support\JsonFile;
 use Laravel\Prompts\Prompt;
+use Tests\Fakes\FakeShell;
 
 beforeEach(function () {
     fakeMac($this);
+    $this->shell = new FakeShell;
+    app()->instance(Shell::class, $this->shell);
     // Prompts skip themselves when stdin isn't a terminal, so Laravel asks console questions instead.
     app()['env'] = 'testing';
 });
@@ -140,6 +144,56 @@ it('stops ignoring what the sync ignored, and names the commands it leaves alone
         ->assertExitCode(0);
 
     expect($this->settings->get('ignore.brew'))->toBe(['formula:fd']);
+});
+
+it('leaves packages alone without --packages, and says how to take them back', function () {
+    syncRecord([
+        ['kind' => 'command', 'command' => ['brew', 'install', '--formula', 'mpv'], 'undo' => [['brew', 'uninstall', '--formula', 'mpv']], 'environment' => []],
+    ]);
+
+    $this->artisan('undo')
+        ->expectsOutputToContain('Add --packages to take back the installs and uninstalls among them.')
+        ->expectsOutputToContain('changed nothing that can be put back')
+        ->assertExitCode(0);
+
+    expect($this->shell->ran())->toBe([]);
+});
+
+it('takes installs and uninstalls back with --packages, last command first', function () {
+    $environment = ['HOMEBREW_NO_AUTO_UPDATE' => '1'];
+    syncRecord([
+        ['kind' => 'command', 'command' => ['brew', 'install', '--formula', 'mpv'], 'undo' => [['brew', 'uninstall', '--formula', 'mpv']], 'environment' => $environment],
+        ['kind' => 'command', 'command' => ['npm', 'rm', '-g', 'serve'], 'undo' => [['npm', 'i', '-g', 'serve']], 'environment' => []],
+        ['kind' => 'command', 'command' => ['pipx', 'install', '--force', 'black==24.1.0']],
+    ]);
+    $this->shell->expect(['npm', 'i', '-g', 'serve'])->expect(['brew', 'uninstall', '--formula', 'mpv']);
+
+    $this->artisan('undo --packages')
+        ->expectsOutputToContain('These ran and stay as they are:')
+        ->expectsOutputToContain('pipx install --force black==24.1.0')
+        ->expectsOutputToContain('brew uninstall --formula mpv')
+        ->expectsConfirmation('Undo these changes?', 'yes')
+        ->expectsOutputToContain('Put back 2 of 2.')
+        ->assertExitCode(0);
+
+    expect($this->shell->ran())->toBe([['npm', 'i', '-g', 'serve'], ['brew', 'uninstall', '--formula', 'mpv']])
+        ->and($this->shell->environmentOf(['brew', 'uninstall', '--formula', 'mpv']))->toBe($environment);
+});
+
+it('reports a package command that fails, and carries on with the rest', function () {
+    syncRecord([
+        ['kind' => 'command', 'command' => ['brew', 'install', '--formula', 'mpv'], 'undo' => [['brew', 'uninstall', '--formula', 'mpv']], 'environment' => []],
+        ['kind' => 'command', 'command' => ['npm', 'rm', '-g', 'serve'], 'undo' => [['npm', 'i', '-g', 'serve']], 'environment' => []],
+    ]);
+    $this->shell
+        ->expect(['npm', 'i', '-g', 'serve'], exitCode: 1, errorOutput: "npm error 404\n")
+        ->expect(['brew', 'uninstall', '--formula', 'mpv']);
+
+    $this->artisan('undo --packages')
+        ->expectsConfirmation('Undo these changes?', 'yes')
+        ->expectsOutputToContain('Put back 1 of 2.')
+        ->expectsOutputToContain('Left alone: npm i -g serve: npm error 404')
+        ->assertExitCode(1);
 });
 
 it('undoes the newest sync, only once, and changes nothing on a dry run', function () {

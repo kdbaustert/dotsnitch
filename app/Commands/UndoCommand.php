@@ -19,13 +19,14 @@ final class UndoCommand extends Command
 {
     protected $signature = 'undo
         {record? : The file sync said it recorded its changes in; the last sync when left out}
+        {--packages : Also uninstall what the sync installed, and install what it uninstalled}
         {--dry-run : List what would be put back, and change nothing}';
 
     protected $description = 'Put back the files and links a sync changed';
 
     /**
      * Lists what it would put back, asks, then does it last change first. Packages a sync
-     * installed or removed stay as they are, and so does a commit it made.
+     * installed or removed stay as they are without --packages, and a commit it made always does.
      *
      * @return int failure when the record can't be read or a change couldn't be put back
      */
@@ -54,10 +55,16 @@ final class UndoCommand extends Command
         }
 
         $steps = $undo->steps($record['steps']);
-        $this->showLeftAlone($undo->commands($record['steps']), $record['commit']);
+
+        if ($this->option('packages')) {
+            $steps = [...$steps, ...$undo->packageSteps($record['steps'])];
+            $this->showLeftAlone($undo->oneWayCommands($record['steps']), $record['commit']);
+        } else {
+            $this->showLeftAlone($undo->commands($record['steps']), $record['commit']);
+        }
 
         if ($steps === []) {
-            $this->line("The sync of {$record['started_at']} changed no files or links.");
+            $this->line("The sync of {$record['started_at']} changed nothing that can be put back.");
 
             return self::SUCCESS;
         }
@@ -100,6 +107,10 @@ final class UndoCommand extends Command
 
             foreach ($commands as $command) {
                 $this->line('  '.OutputFormatter::escape($command));
+            }
+
+            if (! $this->option('packages')) {
+                $this->line('Add --packages to take back the installs and uninstalls among them.');
             }
         }
 

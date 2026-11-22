@@ -15,6 +15,10 @@ enum DriftKind: string
     case Conflict = 'conflict';
     case WrongTarget = 'wrong-target';
     case Broken = 'broken';
+    case Uncommitted = 'uncommitted';
+    case Unpushed = 'unpushed';
+    case Behind = 'behind';
+    case Differs = 'differs';
 
     /**
      * What the drift list and the prompts call it. "missing" alone doesn't say which side lacks

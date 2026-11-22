@@ -21,6 +21,9 @@ enum Action: string
     case RepointAndBackUp = 'repoint-backup';
     case Unlink = 'unlink';
     case ShowDiff = 'diff';
+    case Push = 'push';
+    case Pull = 'pull';
+    case Write = 'write';
     case Ignore = 'ignore';
     case Skip = 'skip';
 
@@ -43,6 +46,9 @@ enum Action: string
             self::RepointAndBackUp => 'Repoint and back up what it pointed at',
             self::Unlink => 'Remove link',
             self::ShowDiff => 'Show diff',
+            self::Push => 'Push',
+            self::Pull => 'Pull',
+            self::Write => 'Write to this Mac',
             self::Ignore => 'Ignore on this Mac',
             self::Skip => 'Skip',
         };
@@ -57,6 +63,7 @@ enum Action: string
             self::Link => 'link',
             self::Repoint => 'repoint',
             self::Unlink => 'unlink',
+            self::Write => 'write',
             default => lcfirst($this->label()),
         };
     }

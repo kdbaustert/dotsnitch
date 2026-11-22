@@ -171,8 +171,8 @@ abstract class PackageManagerTarget implements ComparesSides, SyncTarget
         return match ($decision->action) {
             Action::Install => $decision->item->kind === DriftKind::Version
                 ? array_map($this->commandStep(...), $this->reinstallCommands($package))
-                : [$this->commandStep($this->installCommand($package))],
-            Action::Uninstall => [$this->commandStep($this->uninstallCommand($package))],
+                : [$this->commandStep($this->installCommand($package), [$this->uninstallCommand($package)])],
+            Action::Uninstall => [$this->commandStep($this->uninstallCommand($package), $this->installingAgain($package))],
             Action::AddToManifest => [$this->addStep($decision->manifests, $package)],
             Action::RemoveFromManifest => $this->removeSteps($decision->manifests, $package),
             Action::Replace => $this->replaceSteps($decision->manifests, $package),
@@ -404,18 +404,33 @@ abstract class PackageManagerTarget implements ComparesSides, SyncTarget
 
     /**
      * @param  list<string>  $command
+     * @param  list<list<string>>  $undo  what `undo --packages` runs to take it back; empty when nothing can
      */
-    private function commandStep(array $command): Step
+    private function commandStep(array $command, array $undo = []): Step
     {
-        return new Step(Step::commandLine($command), function () use ($command) {
+        return new Step(Step::commandLine($command), function () use ($command, $undo) {
             $result = $this->shell->run($command, self::INSTALL_TIMEOUT, $this->environment());
 
             if (! $result->successful()) {
                 throw new RuntimeException(trim($result->errorOutput) ?: trim($result->output) ?: "Exited with code {$result->exitCode}");
             }
 
-            return ['kind' => 'command', 'command' => $command];
+            return $undo === []
+                ? ['kind' => 'command', 'command' => $command]
+                : ['kind' => 'command', 'command' => $command, 'undo' => $undo, 'environment' => $this->environment()];
         });
+    }
+
+    /**
+     * The commands that bring back a package an uninstall removed, at whatever version is current.
+     *
+     * @return list<list<string>> empty for one the manager can't install
+     */
+    private function installingAgain(Package $package): array
+    {
+        $unpinned = new Package($package->name, $package->type);
+
+        return $this->canInstall($unpinned) ? [$this->installCommand($unpinned)] : [];
     }
 
     /**
@@ -468,7 +483,7 @@ abstract class PackageManagerTarget implements ComparesSides, SyncTarget
     {
         $replacement = $this->replacementFor($package) ?? throw new RuntimeException("No replacement is known for {$package->name}");
         $swap = $this->editing($package, fn (ManifestEdit $edit, Package $spelling) => $edit->replace($spelling, $replacement));
-        $steps = [$this->commandStep($this->installCommand($replacement))];
+        $steps = [$this->commandStep($this->installCommand($replacement), [$this->uninstallCommand($replacement)])];
 
         if (isset($this->installedByKey[$package->key()])) {
             $steps[] = $this->commandStep($this->uninstallCommand($package));

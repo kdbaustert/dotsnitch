@@ -20,6 +20,7 @@ use App\Support\StatusLock;
 use App\Support\UserSettings;
 use App\Sync\ReportStore;
 use App\Sync\SyncLog;
+use App\Targets\MacDefaults;
 use App\Targets\Symlinks;
 use Closure;
 use Illuminate\Support\ServiceProvider;
@@ -48,7 +49,7 @@ final class AppServiceProvider extends ServiceProvider
 
         // These two build the environment, so they run with the inherited one.
         $this->app->when([Machine::class, PathResolver::class])->needs(Shell::class)->give(fn () => new ProcessShell);
-        $this->app->when([PathResolver::class, DotfilesRepo::class, Symlinks::class])->needs('$inherited')->give(fn () => getenv());
+        $this->app->when([PathResolver::class, DotfilesRepo::class, Symlinks::class, MacDefaults::class])->needs('$inherited')->give(fn () => getenv());
         $this->app->singleton(Machine::class);
         $this->app->singleton(PathResolver::class);
         $this->app->singleton(DotfilesRepo::class);
