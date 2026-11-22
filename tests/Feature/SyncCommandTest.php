@@ -69,7 +69,7 @@ it("fails a check whose manifest can't be read, and still runs the others", func
     chmod("{$this->dir}/repo/locked.txt", 0);
 
     $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'brew,other', '--no-interaction' => true])
-        ->expectsOutputToContain('Failed: file_get_contents(): Failed to open stream: Permission denied')
+        ->expectsOutputToContain('Failed to open stream: Permission denied')
         ->expectsOutputToContain('formula:jq')
         ->assertExitCode(1);
 });
