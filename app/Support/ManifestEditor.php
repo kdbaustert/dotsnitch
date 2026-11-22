@@ -17,6 +17,9 @@ final class ManifestEditor
     /** @var array<string, true> real paths changed this run, in order */
     private array $changed = [];
 
+    /** @var array<string, ?string> the backup copy of each file edit() has changed, null for one it created */
+    private array $copies = [];
+
     /**
      * @param  string  $backups  this run's folder, such as ~/.cache/dotsnitch/backups/2026-11-21-093000; created on the first backup
      */
@@ -26,10 +29,11 @@ final class ManifestEditor
      * Leaves the file alone when $change returns what it was given.
      *
      * @param  Closure(string): string  $change  gets the current contents, '' for a file that doesn't exist yet
+     * @return array<string, mixed> SyncLog's edit shape, or empty when nothing changed
      *
      * @throws RuntimeException when the file can't be read, backed up or written
      */
-    public function edit(string $path, Closure $change): void
+    public function edit(string $path, Closure $change): array
     {
         $path = AtomicFile::resolve($path);
         $exists = is_file($path);
@@ -42,15 +46,18 @@ final class ManifestEditor
         $after = $change($before);
 
         if ($after === $before) {
-            return;
+            return [];
         }
 
-        if ($exists && ! isset($this->changed[$path])) {
-            $this->backUp($path);
+        // Not $changed: a file adopted earlier in the run is in there with no copy of what it holds now.
+        if (! array_key_exists($path, $this->copies)) {
+            $this->copies[$path] = $exists ? $this->backUp($path) : null;
         }
 
         AtomicFile::write($path, $after);
         $this->changed[$path] = true;
+
+        return ['kind' => 'edit', 'path' => $path, 'backup' => $this->copies[$path], 'sha256' => hash('sha256', $after)];
     }
 
     /**
@@ -82,9 +89,11 @@ final class ManifestEditor
     /**
      * Moves a file or folder out of the way, such as one a symlink is about to replace.
      *
+     * @return string where it went, which isn't backupOf() when that was taken
+     *
      * @throws RuntimeException when the move fails
      */
-    public function moveToBackups(string $path): void
+    public function moveToBackups(string $path): string
     {
         $destination = $this->freeBackupOf($path);
         AtomicFile::makeParentOf($destination);
@@ -92,12 +101,16 @@ final class ManifestEditor
         if (! rename($path, $destination)) {
             throw new RuntimeException("Could not move {$path} to {$destination}");
         }
+
+        return $destination;
     }
 
     /**
+     * @return string where the copy is
+     *
      * @throws RuntimeException when the copy fails
      */
-    private function backUp(string $path): void
+    private function backUp(string $path): string
     {
         $copy = $this->freeBackupOf($path);
         AtomicFile::makeParentOf($copy);
@@ -105,6 +118,8 @@ final class ManifestEditor
         if (! copy($path, $copy)) {
             throw new RuntimeException("Could not back up {$path} to {$copy}");
         }
+
+        return $copy;
     }
 
     /**

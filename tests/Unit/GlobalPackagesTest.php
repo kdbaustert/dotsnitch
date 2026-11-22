@@ -374,7 +374,7 @@ it('reads gh extensions, local ones included, and installs a pinned one with --p
 
     expect(globalDrift($report))->toBe([
         ['missing', 'extension:cli/gh-webhook', null],
-        ['untracked', 'extension:github/gh-copilot', null],
+        ['untracked', 'extension:seachicken/gh-poi', null],
         ['untracked', 'extension:gh-mine', null],
     ])->and($install->description)->toBe($mac->bin('gh').' extension install cli/gh-webhook --pin v0.1.0')
         ->and(array_keys($gh->actionsFor(new DriftItem('gh', DriftKind::Missing, new Package('mine', 'extension')))))

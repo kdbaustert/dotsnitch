@@ -17,6 +17,7 @@ use App\Support\ProcessShell;
 use App\Support\StatusLock;
 use App\Support\UserSettings;
 use App\Sync\ReportStore;
+use App\Sync\SyncLog;
 use App\Targets\Symlinks;
 use Illuminate\Support\ServiceProvider;
 use RuntimeException;
@@ -54,6 +55,7 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(UserSettings::class, fn () => new UserSettings($this->home().'/.config/dotsnitch/config.json'));
 
         $this->app->singleton(ReportStore::class, fn () => new ReportStore(ReportStore::defaultDirectory(getenv())));
+        $this->app->singleton(SyncLog::class, fn () => new SyncLog(ReportStore::defaultDirectory(getenv())));
         $this->app->singleton(StatusLock::class, fn () => new StatusLock(ReportStore::defaultDirectory(getenv()).'/'.StatusLock::FILE));
         // launchctl and plutil are system tools, so the login environment isn't needed.
         $this->app->singleton(LaunchAgent::class, fn () => new LaunchAgent(

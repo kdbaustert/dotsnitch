@@ -134,7 +134,7 @@ This check works from the whole repo, so it runs even when there's no layout fil
 - each entry in a Dotbot config (`*.conf.yaml`), `glob` and `prefix` included. Entries with `if:` are skipped and logged.
 - each file in a Stow package, meaning a top-level folder that holds a dotfile. A submodule never counts, and a repo with a Dotbot config needs a `.stowrc` before any folder does. `--target` and `--dotfiles` are read from `.stowrc`.
 - each `*.symlink` file, so `zsh/zshrc.symlink` belongs at `~/.zshrc`.
-- each link that already points into the repo, or at the same path somewhere else, like an old checkout. It reads `~` and `~/.config` two levels down, plus any dot-folder the repo also has, as deep as the repo goes. So `repo/.claude/skills` means it reads `~/.claude/skills`.
+- each link that already points into the repo, or at the same path somewhere else, like an old checkout. It reads `~` and `~/.config` two levels down, plus any dot-folder the repo also has, as deep as the repo goes. So `repo/.vim/pack` means it reads `~/.vim/pack`.
 
 If two layouts claim the same path, the first one wins (Dotbot, then Stow, then `*.symlink`) and the scan log says so. It can't ask you, because prompts don't run under the scan's status display.
 
@@ -242,6 +242,7 @@ The outer parentheses make Starship drop the whole group when the command prints
 | `~/.config/dotsnitch/config.json` | Your saved answers for this Mac: the dotfiles path, the Homebrew prefix, which manifests to read, and what's ignored |
 | `~/.local/state/dotsnitch/last-report.json` | The last scan's results and what was new in it (`$XDG_STATE_HOME` is used if set) |
 | `~/.local/state/dotsnitch/reports/` | The last 30 scans, one file each, for looking back |
+| `~/.local/state/dotsnitch/syncs/` | The last 30 syncs that changed anything, one file each: every step it ran, what that step changed, and the error from any step that failed. It's saved again after each step, so a sync that dies partway still leaves one |
 | `~/.local/state/dotsnitch/status.lock` | Keeps two `status` runs, or a `status` and a `sync`, from scanning at once. Its time marks the last background refresh |
 | `~/.local/state/dotsnitch/last-notified.json` | What the last `status --notify` saw, so the next one posts only what came after |
 | `~/.local/state/dotsnitch/schedule.log` | What the daily run printed. Past 1 MB it moves to `schedule.log.1`, replacing the older one |

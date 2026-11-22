@@ -16,6 +16,7 @@ use App\Sync\DriftKind;
 use App\Sync\DriftReport;
 use App\Sync\ReportStore;
 use App\Sync\Step;
+use App\Sync\SyncLog;
 use App\Targets\Homebrew;
 use Tests\Fakes\FakeShell;
 use Tests\TestCase;
@@ -24,7 +25,8 @@ uses(TestCase::class)->in('Feature');
 
 /**
  * A check that reads any Brewfile and either throws or reports jq, once per kind in $kinds. Adding
- * it appends a line through the real ManifestEditor; uninstalling only records the call in $ran.
+ * it appends a line through the real ManifestEditor; uninstalling only records the call in $ran,
+ * or fails when $uninstallError is set.
  */
 function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarget
 {
@@ -38,6 +40,9 @@ function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarge
 
         /** @var list<DriftKind> */
         public array $kinds = [DriftKind::Untracked];
+
+        /** Set it to make the uninstall step fail with this message. */
+        public ?string $uninstallError = null;
 
         /**
          * @param  bool  $fails  true makes scan() throw
@@ -106,11 +111,18 @@ function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarge
         public function steps(Decision $decision): array
         {
             return match ($decision->action) {
-                Action::AddToManifest => [new Step('Add formula:jq to '.basename($decision->manifests[0]), function () use ($decision) {
-                    app(ManifestEditor::class)->edit($decision->manifests[0], fn (string $contents) => $contents."brew \"jq\"\n");
-                })],
+                Action::AddToManifest => [new Step(
+                    'Add formula:jq to '.basename($decision->manifests[0]),
+                    fn () => app(ManifestEditor::class)->edit($decision->manifests[0], fn (string $contents) => $contents."brew \"jq\"\n"),
+                )],
                 Action::Uninstall => [new Step('brew uninstall --formula jq', function () {
+                    if ($this->uninstallError !== null) {
+                        throw new RuntimeException($this->uninstallError);
+                    }
+
                     $this->ran[] = 'uninstall jq';
+
+                    return ['kind' => 'command', 'command' => ['brew', 'uninstall', '--formula', 'jq']];
                 })],
                 default => [],
             };
@@ -144,6 +156,7 @@ function fakeMac(TestCase $test): void
     app()->instance(Machine::class, new Machine($shell));
     app()->instance(ManifestEditor::class, new ManifestEditor("{$test->dir}/backups"));
     app()->instance(ReportStore::class, new ReportStore("{$test->dir}/state"));
+    app()->instance(SyncLog::class, new SyncLog("{$test->dir}/state"));
     app()->instance(StatusLock::class, new StatusLock("{$test->dir}/state/".StatusLock::FILE));
 }
 

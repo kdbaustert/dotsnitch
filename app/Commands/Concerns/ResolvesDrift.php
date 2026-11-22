@@ -20,6 +20,7 @@ use App\Sync\DriftReport;
 use App\Sync\IgnoreList;
 use App\Sync\ResolutionMode;
 use App\Sync\Step;
+use App\Sync\SyncLog;
 use Closure;
 use Laravel\Prompts\Progress;
 use LaravelZero\Framework\Commands\Command;
@@ -375,6 +376,8 @@ trait ResolvesDrift
     {
         return new Step("Ignore {$item->subject->key()} on this Mac", function () use ($item) {
             $this->laravel->make(IgnoreList::class)->add($item);
+
+            return ['kind' => 'ignore', 'check' => $item->check, 'key' => $item->subject->key()];
         });
     }
 
@@ -424,8 +427,8 @@ trait ResolvesDrift
     }
 
     /**
-     * Runs each change under a progress bar. A failed step stops the rest of its change, and the
-     * other changes still run.
+     * Runs each change under a progress bar, logging every step. A failed step stops the rest of
+     * its change, and the other changes still run.
      *
      * @param  list<Change>  $changes
      * @return list<Change> the ones that finished
@@ -436,17 +439,21 @@ trait ResolvesDrift
             return [];
         }
 
-        $results = progress('Applying changes', $changes, function (Change $change, Progress $progress) {
+        $log = $this->laravel->make(SyncLog::class);
+        $results = progress('Applying changes', $changes, function (Change $change, Progress $progress) use ($log) {
             $progress->hint($this->describe($change->decision->item));
 
             foreach ($change->steps as $step) {
                 try {
-                    ($step->run)();
+                    $effect = ($step->run)();
                 } catch (RuntimeException $e) {
+                    $log->failed($change->decision, $step, $e->getMessage());
                     $this->failures[] = "{$step->description}: {$e->getMessage()}";
 
                     return null;
                 }
+
+                $log->ran($change->decision, $step, $effect);
             }
 
             return $change;
@@ -532,6 +539,8 @@ trait ResolvesDrift
                 return;
             }
         }
+
+        $this->laravel->make(SyncLog::class)->committed($root, $this->commitMessage($applied));
     }
 
     /**

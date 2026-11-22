@@ -159,12 +159,6 @@ final class ReportStore
     {
         $directory = $this->directory.'/'.self::HISTORY;
         JsonFile::write($directory.'/'.$scan->scannedAt->format('Y-m-d\THis').'.json', $scan->toArray());
-
-        $files = glob("{$directory}/*.json") ?: [];
-        sort($files);
-
-        foreach (array_slice($files, 0, max(count($files) - self::HISTORY_KEPT, 0)) as $old) {
-            unlink($old);
-        }
+        JsonFile::keepNewest($directory, self::HISTORY_KEPT);
     }
 }

@@ -13,7 +13,7 @@ final readonly class Step
 {
     /**
      * @param  string  $description  the exact command, or the edit and file name
-     * @param  Closure(): void  $run  throws RuntimeException when the step fails
+     * @param  Closure(): array<string, mixed>  $run  returns what it changed, in one of SyncLog's shapes; throws RuntimeException when the step fails
      */
     public function __construct(
         public string $description,

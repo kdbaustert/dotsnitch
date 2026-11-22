@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\Shell;
 use App\Support\DotfilesRepo;
+use App\Support\JsonFile;
 use App\Support\ManifestEditor;
 use App\Support\PathResolver;
 use App\Support\StatusLock;
@@ -25,6 +26,18 @@ beforeEach(fn () => fakeMac($this));
 function answerWithQuestions(): void
 {
     app()['env'] = 'testing';
+}
+
+/**
+ * The log of the one sync the test applied.
+ *
+ * @return array<mixed>
+ */
+function syncLog(): array
+{
+    [$file] = glob(test()->dir.'/state/syncs/*.json');
+
+    return JsonFile::read($file);
 }
 
 afterEach(function () {
@@ -98,7 +111,8 @@ it('prints the plan and the commands on a dry run, and changes nothing but the s
 
     expect(file_get_contents("{$this->dir}/repo/Brewfile"))->toBe('')
         ->and($other->ran)->toBe([])
-        ->and(app(ReportStore::class)->latest()->checks)->toBe(['other' => ['other:untracked:formula:jq']]);
+        ->and(app(ReportStore::class)->latest()->checks)->toBe(['other' => ['other:untracked:formula:jq']])
+        ->and(file_exists("{$this->dir}/state/syncs"))->toBeFalse();
 });
 
 it('adds to a new overlay for this Mac, rescans and saves the report', function () {
@@ -161,6 +175,53 @@ it('keeps a choice for a package when its other item is skipped', function () {
     expect(file_get_contents("{$this->dir}/repo/Brewfile"))->toBe("brew \"jq\"\n");
 });
 
+it('logs each step with what it takes to put back', function () {
+    onlyOtherCheck();
+    $brewfile = realpath("{$this->dir}/repo/Brewfile");
+    file_put_contents($brewfile, "brew \"mpv\"\n");
+    answerWithQuestions();
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other'])
+        ->expectsQuestion('How do you want to resolve it?', 'each')
+        ->expectsQuestion('Other, untracked: formula:jq', 'add')
+        ->expectsQuestion('Add Other items to which file?', 'Brewfile')
+        ->expectsConfirmation('Apply these changes?', 'yes')
+        ->assertExitCode(0);
+
+    expect(syncLog()['steps'])->toBe([[
+        'item' => 'other:untracked:formula:jq',
+        'action' => 'add',
+        'description' => 'Add formula:jq to Brewfile',
+        'effect' => [
+            'kind' => 'edit',
+            'path' => $brewfile,
+            'backup' => "{$this->dir}/backups{$brewfile}",
+            'sha256' => hash('sha256', "brew \"mpv\"\nbrew \"jq\"\n"),
+        ],
+    ]])
+        ->and(file_get_contents("{$this->dir}/backups{$brewfile}"))->toBe("brew \"mpv\"\n");
+});
+
+it('logs a step that failed, with its error', function () {
+    onlyOtherCheck()->uninstallError = 'jq is in use';
+    answerWithQuestions();
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other'])
+        ->expectsQuestion('How do you want to resolve it?', 'each')
+        ->expectsQuestion('Other, untracked: formula:jq', 'uninstall')
+        ->expectsConfirmation('Apply these changes?', 'yes')
+        ->expectsConfirmation('Uninstall formula:jq?', 'yes')
+        ->expectsOutputToContain('brew uninstall --formula jq: jq is in use')
+        ->assertExitCode(1);
+
+    expect(syncLog()['steps'])->toBe([[
+        'item' => 'other:untracked:formula:jq',
+        'action' => 'uninstall',
+        'description' => 'brew uninstall --formula jq',
+        'failed' => 'jq is in use',
+    ]]);
+});
+
 it('offers to commit the manifests it changed when the repo is inside a git checkout', function () {
     onlyOtherCheck();
     answerWithQuestions();
@@ -184,7 +245,8 @@ it('offers to commit the manifests it changed when the repo is inside a git chec
         ->assertExitCode(0);
 
     expect(array_map(fn (array $command) => $command[3], $shell->ran()))->toBe(['rev-parse', 'diff', 'add', 'commit'])
-        ->and(file_get_contents("{$this->dir}/repo/Brewfile"))->toBe("brew \"jq\"\n");
+        ->and(file_get_contents("{$this->dir}/repo/Brewfile"))->toBe("brew \"jq\"\n")
+        ->and(syncLog()['commit'])->toBe(['repo' => realpath("{$this->dir}/repo"), 'message' => 'dotsnitch: add jq']);
 });
 
 it("doesn't offer a commit when the repo isn't in a git checkout", function () {
@@ -279,7 +341,8 @@ it('leaves an item ignored during the run out of the saved report', function () 
         ->assertExitCode(0);
 
     expect($this->settings->get('ignore.other'))->toBe(['formula:jq'])
-        ->and(app(ReportStore::class)->latest()->checks)->toBe(['other' => []]);
+        ->and(app(ReportStore::class)->latest()->checks)->toBe(['other' => []])
+        ->and(syncLog()['steps'][0]['effect'])->toBe(['kind' => 'ignore', 'check' => 'other', 'key' => 'formula:jq']);
 });
 
 it('uses the first Homebrew without a terminal and saves nothing', function () {

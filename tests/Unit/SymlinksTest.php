@@ -10,6 +10,7 @@ use App\Sync\Action;
 use App\Sync\Decision;
 use App\Sync\DriftItem;
 use App\Sync\DriftKind;
+use App\Sync\Step;
 use App\Targets\Symlinks;
 use Laravel\Prompts\Prompt;
 use Tests\Fakes\FakeShell;
@@ -73,12 +74,12 @@ function scanLinks(array $manifests): array
 
 /**
  * Runs every step for one decision, the way apply() does.
+ *
+ * @return list<array<string, mixed>> what each step returned
  */
-function runLinkAction(Action $action, DriftItem $item): void
+function runLinkAction(Action $action, DriftItem $item): array
 {
-    foreach (test()->symlinks->steps(new Decision($item, $action)) as $step) {
-        ($step->run)();
-    }
+    return array_map(fn (Step $step) => ($step->run)(), test()->symlinks->steps(new Decision($item, $action)));
 }
 
 it('reports every kind of drift from a Dotbot config and existing links', function () {
@@ -170,15 +171,15 @@ it('keeps the first layout when two claim the same path, and says so', function 
 });
 
 it('reads folders the repo mirrors past the usual depth, and nothing else', function () {
-    putFile("{$this->root}/.claude/skills/review/SKILL.md");
-    putFile("{$this->dir}/old/.claude/skills/review/SKILL.md");
-    mkdir("{$this->home}/.claude/skills", recursive: true);
-    symlink("{$this->dir}/old/.claude/skills/review", "{$this->home}/.claude/skills/review");
+    putFile("{$this->root}/.vim/pack/mine/plugin.vim");
+    putFile("{$this->dir}/old/.vim/pack/mine/plugin.vim");
+    mkdir("{$this->home}/.vim/pack", recursive: true);
+    symlink("{$this->dir}/old/.vim/pack/mine", "{$this->home}/.vim/pack/mine");
     mkdir("{$this->home}/.cache/deep", recursive: true);
-    symlink("{$this->root}/.claude", "{$this->home}/.cache/deep/claude");
+    symlink("{$this->root}/.vim", "{$this->home}/.cache/deep/vim");
 
     expect(scanLinks([]))->toBe([
-        ['wrong-target', "{$this->home}/.claude/skills/review", "{$this->root}/.claude/skills/review", "points at {$this->dir}/old/.claude/skills/review"],
+        ['wrong-target', "{$this->home}/.vim/pack/mine", "{$this->root}/.vim/pack/mine", "points at {$this->dir}/old/.vim/pack/mine"],
     ]);
 });
 
@@ -225,21 +226,30 @@ it('moves the file in the way into backups before linking', function () {
         "ln -s {$this->root}/.gitconfig {$this->home}/.gitconfig",
     ]);
 
-    runLinkAction(Action::BackUpAndLink, $item);
+    $effects = runLinkAction(Action::BackUpAndLink, $item);
 
     expect(readlink("{$this->home}/.gitconfig"))->toBe("{$this->root}/.gitconfig")
-        ->and(file_get_contents("{$this->dir}/backups{$this->home}/.gitconfig"))->toBe("[home]\n");
+        ->and(file_get_contents("{$this->dir}/backups{$this->home}/.gitconfig"))->toBe("[home]\n")
+        ->and($effects)->toBe([
+            ['kind' => 'move', 'from' => "{$this->home}/.gitconfig", 'to' => "{$this->dir}/backups{$this->home}/.gitconfig"],
+            ['kind' => 'link', 'target' => "{$this->home}/.gitconfig", 'source' => "{$this->root}/.gitconfig"],
+        ]);
 });
 
 it("adopts the home copy into the repo and backs up the repo's", function () {
     putFile("{$this->root}/.gitconfig", "[repo]\n");
     putFile("{$this->home}/.gitconfig", "[home]\n");
 
-    runLinkAction(Action::Adopt, new DriftItem('symlinks', DriftKind::Conflict, new Link("{$this->root}/.gitconfig", "{$this->home}/.gitconfig")));
+    $effects = runLinkAction(Action::Adopt, new DriftItem('symlinks', DriftKind::Conflict, new Link("{$this->root}/.gitconfig", "{$this->home}/.gitconfig")));
 
     expect(readlink("{$this->home}/.gitconfig"))->toBe("{$this->root}/.gitconfig")
         ->and(file_get_contents("{$this->root}/.gitconfig"))->toBe("[home]\n")
-        ->and(file_get_contents("{$this->dir}/backups{$this->root}/.gitconfig"))->toBe("[repo]\n");
+        ->and(file_get_contents("{$this->dir}/backups{$this->root}/.gitconfig"))->toBe("[repo]\n")
+        ->and($effects)->toBe([
+            ['kind' => 'move', 'from' => "{$this->root}/.gitconfig", 'to' => "{$this->dir}/backups{$this->root}/.gitconfig"],
+            ['kind' => 'move', 'from' => "{$this->home}/.gitconfig", 'to' => "{$this->root}/.gitconfig"],
+            ['kind' => 'link', 'target' => "{$this->home}/.gitconfig", 'source' => "{$this->root}/.gitconfig"],
+        ]);
 });
 
 it('repoints a link and leaves the old destination alone', function () {
@@ -247,18 +257,22 @@ it('repoints a link and leaves the old destination alone', function () {
     putFile("{$this->dir}/old/.vimrc", 'old');
     symlink("{$this->dir}/old/.vimrc", "{$this->home}/.vimrc");
 
-    runLinkAction(Action::Repoint, new DriftItem('symlinks', DriftKind::WrongTarget, new Link("{$this->root}/.vimrc", "{$this->home}/.vimrc")));
+    $effects = runLinkAction(Action::Repoint, new DriftItem('symlinks', DriftKind::WrongTarget, new Link("{$this->root}/.vimrc", "{$this->home}/.vimrc")));
 
     expect(readlink("{$this->home}/.vimrc"))->toBe("{$this->root}/.vimrc")
-        ->and(file_get_contents("{$this->dir}/old/.vimrc"))->toBe('old');
+        ->and(file_get_contents("{$this->dir}/old/.vimrc"))->toBe('old')
+        ->and($effects)->toBe([
+            ['kind' => 'repoint', 'target' => "{$this->home}/.vimrc", 'source' => "{$this->root}/.vimrc", 'pointed_to' => "{$this->dir}/old/.vimrc"],
+        ]);
 });
 
 it('removes a broken link', function () {
     symlink("{$this->root}/.oldrc", "{$this->home}/.oldrc");
 
-    runLinkAction(Action::Unlink, new DriftItem('symlinks', DriftKind::Broken, new Link("{$this->root}/.oldrc", "{$this->home}/.oldrc")));
+    $effects = runLinkAction(Action::Unlink, new DriftItem('symlinks', DriftKind::Broken, new Link("{$this->root}/.oldrc", "{$this->home}/.oldrc")));
 
-    expect(is_link("{$this->home}/.oldrc"))->toBeFalse();
+    expect(is_link("{$this->home}/.oldrc"))->toBeFalse()
+        ->and($effects)->toBe([['kind' => 'unlink', 'target' => "{$this->home}/.oldrc", 'pointed_to' => "{$this->root}/.oldrc"]]);
 });
 
 it('refuses to remove a real file', function () {

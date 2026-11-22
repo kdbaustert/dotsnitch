@@ -332,6 +332,8 @@ abstract class PackageManagerTarget implements SyncTarget
             if (! $result->successful()) {
                 throw new RuntimeException(trim($result->errorOutput) ?: trim($result->output) ?: "Exited with code {$result->exitCode}");
             }
+
+            return ['kind' => 'command', 'command' => $command];
         });
     }
 

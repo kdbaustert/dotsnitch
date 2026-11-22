@@ -259,9 +259,10 @@ it('installs and uninstalls with the right brew command and environment', functi
         ->and($stepsFor('untracked:cask:zed', Action::Skip))->toBe([]);
 
     $this->shell->expect([$this->brew, 'install', '--formula', 'mpv']);
-    ($steps[0]->run)();
+    $effect = ($steps[0]->run)();
 
-    expect($this->shell->environmentOf([$this->brew, 'install', '--formula', 'mpv']))->toBe(Homebrew::ENVIRONMENT);
+    expect($this->shell->environmentOf([$this->brew, 'install', '--formula', 'mpv']))->toBe(Homebrew::ENVIRONMENT)
+        ->and($effect)->toBe(['kind' => 'command', 'command' => [$this->brew, 'install', '--formula', 'mpv']]);
 });
 
 it('throws brew stderr when a command fails', function () {

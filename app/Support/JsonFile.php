@@ -52,4 +52,17 @@ final class JsonFile
     {
         AtomicFile::write($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
     }
+
+    /**
+     * Deletes the oldest .json files in a folder of files named by time, leaving the newest $kept.
+     */
+    public static function keepNewest(string $directory, int $kept): void
+    {
+        $files = glob("{$directory}/*.json") ?: [];
+        sort($files);
+
+        foreach (array_slice($files, 0, max(count($files) - $kept, 0)) as $old) {
+            unlink($old);
+        }
+    }
 }

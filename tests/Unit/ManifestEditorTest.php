@@ -54,6 +54,30 @@ it('creates a new file without a backup and leaves an unchanged one alone', func
         ->and($this->editor->changed())->toBe([$overlay]);
 });
 
+it("returns each edit's backup and a hash of what it wrote", function () {
+    $brewfile = "{$this->dir}/repo/Brewfile";
+    $backup = "{$this->dir}/backups{$brewfile}";
+    file_put_contents($brewfile, "brew \"jq\"\n");
+
+    expect($this->editor->edit($brewfile, fn () => "brew \"mpv\"\n"))
+        ->toBe(['kind' => 'edit', 'path' => $brewfile, 'backup' => $backup, 'sha256' => hash('sha256', "brew \"mpv\"\n")])
+        ->and($this->editor->edit($brewfile, fn () => ''))
+        ->toBe(['kind' => 'edit', 'path' => $brewfile, 'backup' => $backup, 'sha256' => hash('sha256', '')])
+        ->and($this->editor->edit("{$brewfile}.mac", fn () => "brew \"jq\"\n")['backup'])->toBeNull()
+        ->and($this->editor->edit($brewfile, fn (string $contents) => $contents))->toBe([]);
+});
+
+it('backs up a file adopted earlier in the run before editing it', function () {
+    $zshrc = "{$this->dir}/repo/.zshrc";
+    file_put_contents($zshrc, 'adopted');
+    $this->editor->markChanged($zshrc);
+
+    $effect = $this->editor->edit($zshrc, fn () => 'edited');
+
+    expect($effect['backup'])->toBe("{$this->dir}/backups{$zshrc}")
+        ->and(file_get_contents($effect['backup']))->toBe('adopted');
+});
+
 it('leaves no temp file behind when the write fails', function () {
     mkdir("{$this->dir}/repo/Brewfile");
     // PHPUnit reports rename()'s warning even under @, so it's silenced for this one call.
@@ -84,9 +108,10 @@ it('numbers a backup instead of replacing one already there', function () {
     file_put_contents($zshrc, 'old');
 
     $this->editor->edit($zshrc, fn () => 'edited');
-    $this->editor->moveToBackups($zshrc);
+    $moved = $this->editor->moveToBackups($zshrc);
 
-    expect(file_exists($zshrc))->toBeFalse()
+    expect($moved)->toBe("{$this->dir}/backups{$zshrc}.1")
+        ->and(file_exists($zshrc))->toBeFalse()
         ->and(file_get_contents("{$this->dir}/backups{$zshrc}"))->toBe('old')
         ->and(file_get_contents("{$this->dir}/backups{$zshrc}.1"))->toBe('edited');
 });

@@ -301,7 +301,7 @@ final class LinkMapBuilder
 
     /**
      * Symlinks in $dir and $depth - 1 levels below it. Folders the repo also has keep going past
-     * that, so repo/.claude/skills means ~/.claude/skills is read too.
+     * that, so repo/.vim/pack means ~/.vim/pack is read too.
      *
      * @return list<string>
      */

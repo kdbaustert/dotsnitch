@@ -258,6 +258,8 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
             if (! symlink($link->source, $link->target)) {
                 throw new RuntimeException("Could not link {$link->target} to {$link->source}");
             }
+
+            return ['kind' => 'link', 'target' => $link->target, 'source' => $link->source];
         });
     }
 
@@ -268,7 +270,7 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
     {
         return new Step(
             Step::commandLine(['mv', $path, $this->editor->backupOf($path)]),
-            fn () => $this->editor->moveToBackups($path),
+            fn () => ['kind' => 'move', 'from' => $path, 'to' => $this->editor->moveToBackups($path)],
         );
     }
 
@@ -288,6 +290,8 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
             }
 
             $this->editor->markChanged($link->source);
+
+            return ['kind' => 'move', 'from' => $link->target, 'to' => $link->source];
         });
     }
 
@@ -302,6 +306,7 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
                 throw new RuntimeException("{$link->target} isn't a symlink anymore");
             }
 
+            $pointedTo = readlink($link->target);
             $temporary = dirname($link->target).'/.dotsnitch-'.bin2hex(random_bytes(4));
 
             if (! symlink($link->source, $temporary)) {
@@ -313,6 +318,8 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
 
                 throw new RuntimeException("Could not repoint {$link->target}");
             }
+
+            return ['kind' => 'repoint', 'target' => $link->target, 'source' => $link->source, 'pointed_to' => $pointedTo];
         });
     }
 
@@ -326,9 +333,13 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
                 throw new RuntimeException("{$link->target} isn't a symlink anymore");
             }
 
+            $pointedTo = readlink($link->target);
+
             if (! unlink($link->target)) {
                 throw new RuntimeException("Could not remove {$link->target}");
             }
+
+            return ['kind' => 'unlink', 'target' => $link->target, 'pointed_to' => $pointedTo];
         });
     }
 
