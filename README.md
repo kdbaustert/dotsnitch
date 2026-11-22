@@ -11,7 +11,12 @@ You don't have to tell it much. It follows the symlinks in your home folder back
 
 It runs on Apple Silicon and Intel Macs and works out the architecture, Homebrew prefix and tool paths each time. It's built with [Laravel Zero](https://laravel-zero.com), but a release is one file with PHP built in, so you don't need PHP installed.
 
-There's no release yet. The install command below starts working once the first tag is pushed. Until then, run it from source (see [Development](#development)).
+There's no full release yet, only a beta. The install command below starts working with the first full release. Until then, install the beta or run it from source (see [Development](#development)):
+
+```sh
+beta=https://github.com/kdbaustert/dotsnitch/releases/download/v0.1.0-beta.1
+curl -fsSL "$beta/install.sh" | DOTSNITCH_RELEASES="$beta" sh
+```
 
 ## What it does
 
@@ -318,7 +323,9 @@ DOTSNITCH_BINARY=builds/dotsnitch-arm64 vendor/bin/pest --testsuite=Binary
 
 Push a tag like `v0.1.0`. `.github/workflows/release.yml` runs the whole CI workflow on it, with the tag as the version, then publishes a GitHub release with `dotsnitch-arm64`, `dotsnitch-x86_64`, `checksums.txt` and `install.sh`.
 
-If the repo has a `HOMEBREW_TAP_TOKEN` secret that can push to `kdbaustert/homebrew-tap`, the release also writes `Formula/dotsnitch.rb` there with `scripts/formula.sh`. Without the secret, it skips that step. To see the formula for a release without pushing anything, pass it the tag and that release's `checksums.txt`:
+A tag with a hyphen in it, like `v0.1.0-beta.1`, is published as a prerelease. GitHub doesn't count it as the latest release, so the install command keeps fetching the last full one.
+
+If the repo has a `HOMEBREW_TAP_TOKEN` secret that can push to `kdbaustert/homebrew-tap`, a full release also writes `Formula/dotsnitch.rb` there with `scripts/formula.sh`. Without the secret, or for a prerelease, it skips that step. To see the formula for a release without pushing anything, pass it the tag and that release's `checksums.txt`:
 
 ```sh
 scripts/formula.sh v0.1.0 checksums.txt

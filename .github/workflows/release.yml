@@ -35,20 +35,24 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
+          # A tag with a hyphen, like v0.1.0-beta.1, is a prerelease. It never becomes "latest",
+          # which is where install.sh downloads from.
+          PRERELEASE: ${{ contains(github.ref_name, '-') && '--prerelease' || '' }}
         run: >
-          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes $PRERELEASE
           dist/dotsnitch-arm64 dist/dotsnitch-x86_64 dist/checksums.txt dist/install.sh
 
-      # Skipped until the repo has a HOMEBREW_TAP_TOKEN secret that can push to the tap.
+      # Skipped until the repo has a HOMEBREW_TAP_TOKEN secret that can push to the tap, and for a
+      # prerelease.
       - name: Check out the tap
-        if: env.TAP_TOKEN != ''
+        if: env.TAP_TOKEN != '' && !contains(github.ref_name, '-')
         uses: actions/checkout@v5
         with:
           repository: ${{ github.repository_owner }}/homebrew-tap
           token: ${{ env.TAP_TOKEN }}
           path: tap
       - name: Bump the formula
-        if: env.TAP_TOKEN != ''
+        if: env.TAP_TOKEN != '' && !contains(github.ref_name, '-')
         working-directory: tap
         run: |
           mkdir -p Formula
