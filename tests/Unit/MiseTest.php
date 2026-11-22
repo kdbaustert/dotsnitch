@@ -84,6 +84,30 @@ it('stops when mise cannot read the config', function () {
         ->toThrow(RuntimeException::class, 'nosuch not found in mise tool registry');
 });
 
+it('stops when mise prints something that is not JSON', function () {
+    $this->shell->expect([$this->mise, 'ls', '--missing', '--json'], '');
+
+    expect(fn () => $this->check->scan([$this->config], fn () => null))
+        ->toThrow(RuntimeException::class, "mise ls didn't print JSON");
+});
+
+it('reports a tool missing in several versions once, and installs them together', function () {
+    $both = json_encode(['node' => [
+        ['version' => '20.1.0', 'source' => ['path' => $this->config]],
+        ['version' => '22.2.0', 'source' => ['path' => $this->config]],
+    ]]);
+    $install = [$this->mise, 'install', 'node@20.1.0', 'node@22.2.0'];
+    $this->shell->expect([$this->mise, 'ls', '--missing', '--json'], $both)->expect($install);
+
+    $items = $this->check->scan([$this->config], fn () => null)->items;
+    [$step] = $this->check->steps(new Decision($items[0], Action::Install));
+
+    expect($items)->toHaveCount(1)
+        ->and($items[0]->subject->version)->toBeNull()
+        ->and($items[0]->detail)->toBe('20.1.0, 22.2.0')
+        ->and(($step->run)()['undo'])->toBe([[$this->mise, 'uninstall', 'node@20.1.0', 'node@22.2.0']]);
+});
+
 it('installs the version the scan resolved, and records the uninstall that undoes it', function () {
     $install = [$this->mise, 'install', 'usage@7.4.0'];
     $this->shell

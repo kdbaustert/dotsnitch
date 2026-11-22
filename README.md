@@ -34,6 +34,8 @@ curl -fsSL "$beta/install.sh" | DOTSNITCH_RELEASES="$beta" sh
 - marks what's new since the last scan, runs every day and notifies you
 - shows the count in your shell prompt, and prints a scan as JSON for scripts
 - lists the packages that have a newer version
+- keeps the last 30 scans, so you can see whether the count is going up or down
+- updates itself, and has tab completion for zsh, bash and fish
 
 ## Install
 
@@ -111,24 +113,24 @@ You get a live status for each check while it scans. Then there's a summary row 
 
 ## What it checks
 
-| Check | Manifest it looks for |
-| --- | --- |
-| Homebrew | `Brewfile`, `.Brewfile` |
-| Mac App Store | `mas.txt`, `Masfile`, `mas.sh`, or the `mas` lines of a `Brewfile` |
-| VS Code extensions | `vscode-extensions.txt`, or the `vscode` lines of a `Brewfile` |
-| Composer (global) | `composer/composer.json`, `.composer/composer.json`, `composer-global.json`, `Composerfile` |
-| npm (global) | `npm-global.txt`, `.npm-globals`, `npm/package.json` |
-| pnpm (global) | `pnpm-global.txt`, `.pnpm-globals`, `pnpm.sh` |
-| GitHub CLI extensions | `gh-extensions.txt`, `gh-extensions.sh` |
-| pipx | `pipx.txt`, `Pipxfile`, `pipx.sh` |
-| uv tools | `uv-tools.txt`, `uv-tools.sh` |
-| Cargo | `cargo.txt`, `Cargofile`, `cargo.sh` |
-| mise | `mise/config.toml`, `mise.toml`, `.mise.toml` |
-| macOS defaults | `.macos`, `macos.sh`, `defaults.sh` |
-| Symlinked config files | `*.conf.yaml`, `.stowrc`, `*.symlink` |
-| Dotfiles repo | none, it reads the repo's git state |
+| Check | Name for `--checks` | Manifest it looks for |
+| --- | --- | --- |
+| Homebrew | `brew` | `Brewfile`, `.Brewfile` |
+| Mac App Store | `mas` | `mas.txt`, `Masfile`, `mas.sh`, or the `mas` lines of a `Brewfile` |
+| VS Code extensions | `vscode` | `vscode-extensions.txt`, or the `vscode` lines of a `Brewfile` |
+| Composer (global) | `composer` | `composer/composer.json`, `.composer/composer.json`, `composer-global.json`, `Composerfile` |
+| npm (global) | `npm` | `npm-global.txt`, `.npm-globals`, `npm/package.json` |
+| pnpm (global) | `pnpm` | `pnpm-global.txt`, `.pnpm-globals`, `pnpm.sh` |
+| GitHub CLI extensions | `gh` | `gh-extensions.txt`, `gh-extensions.sh` |
+| pipx | `pipx` | `pipx.txt`, `Pipxfile`, `pipx.sh` |
+| uv tools | `uv` | `uv-tools.txt`, `uv-tools.sh` |
+| Cargo | `cargo` | `cargo.txt`, `Cargofile`, `cargo.sh` |
+| mise | `mise` | `mise/config.toml`, `mise.toml`, `.mise.toml` |
+| macOS defaults | `defaults` | `.macos`, `macos.sh`, `defaults.sh` |
+| Symlinked config files | `symlinks` | `*.conf.yaml`, `.stowrc`, `*.symlink` |
+| Dotfiles repo | `repo` | none, it reads the repo's git state |
 
-Each check's file patterns live in its class under `app/Targets`.
+The middle column is what `--checks=` takes, as in `--checks=brew,defaults,repo`. Each check's file patterns live in its class under `app/Targets`.
 
 ### Manifest formats
 
@@ -162,7 +164,7 @@ I haven't run the pipx, uv and Cargo checks on a Mac that has them installed. Th
 
 ## mise
 
-This check asks mise which tools the config in your dotfiles wants and doesn't have. It runs `mise ls --missing --json` with `MISE_GLOBAL_CONFIG_FILE` pointed at the file, so `node = "22"` and `usage = "latest"` resolve the way they will at install time. That lookup can use the network. Install runs `mise install node@22.23.5` with the version the scan resolved.
+This check asks mise which tools the config in your dotfiles wants and doesn't have. It runs `mise ls --missing --json` with `MISE_GLOBAL_CONFIG_FILE` pointed at the file, so `node = "22"` and `usage = "latest"` resolve the way they will at install time. That lookup can use the network. Install runs `mise install node@22.23.5` with the version the scan resolved. A tool the config asks for in several versions, like `node = ["20", "22"]`, is one line that names the missing versions, and Install puts them all in.
 
 It only goes one way. A version that's installed and isn't in your dotfiles isn't reported, because mise keeps every version a project config has asked for. A `mise.toml` at the repo's root counts as a manifest, so leave mise out of `--checks` if that file is only for working on the repo itself.
 
@@ -180,7 +182,7 @@ macOS defaults
 
 "Write to this Mac" runs that line. It never runs the rest of the script, so a `killall Dock` further down is still yours to run.
 
-It compares lines with a `-bool`, `-int`, `-float` or `-string` value, or a bare value with no type. `-g` is read as `NSGlobalDomain`, `$HOME` is filled in, and when two lines write the same key the last one counts. It passes over `-array` and `-dict` values, any other `$variable`, lines with `sudo`, `-currentHost` or `-app`, and lines with a second command after `&&` or `;`. The scan says how many it couldn't compare.
+It compares lines with a `-bool`, `-int`, `-float` or `-string` value, or a bare value with no type. `-g` is read as `NSGlobalDomain`, `$HOME` and a leading `~` are filled in, and when two lines write the same key the last one counts. That holds across files, so a line in `macos.sh.kennys-macbook-pro` replaces the one in `macos.sh`. It passes over `-array` and `-dict` values, an untyped value that starts with `(`, `{` or `<`, any other `$variable`, lines with `sudo`, `-currentHost` or `-app`, and lines with a second command after `&&` or `;`. The scan says how many it couldn't compare.
 
 It only goes one way here too. A setting you changed in System Settings that no line writes isn't reported.
 
@@ -192,7 +194,7 @@ This check needs no manifest. When your dotfiles are a git checkout it reports:
 - **unpushed:** commits the branch has that its upstream doesn't. Push runs `git push`.
 - **behind:** commits the remote has that you don't. Pull runs `git pull --ff-only`, so it stops when the branches have split.
 
-It asks the remote with `git ls-remote`, gives it 15 seconds, and never asks for a password. If the remote doesn't answer, or the branch has no upstream, the scan says so and reports the rest.
+It asks the remote with `git ls-remote`, gives it 15 seconds, and never asks for a password or a key's passphrase. An ssh remote that needs either one counts as not answering, so use an agent or a credential helper. If the remote doesn't answer, or the branch has no upstream, the scan says so and reports the rest.
 
 ## Symlinked config files
 
@@ -236,7 +238,7 @@ dotsnitch undo --dry-run   # list what it would put back
 dotsnitch undo --packages  # also take back its installs and uninstalls
 ```
 
-`undo` puts back the manifest edits, links and moved files from a sync, last change first, after showing you the list and asking. To undo an older one, pass the file that sync said it recorded its changes in. It lists the commands that sync ran and leaves them alone unless you add `--packages`. With it, an install is uninstalled and an uninstall is installed again, at whatever version is current. A macOS setting that had no value before is deleted, and a mise tool is removed. It can't take back a commit, a push, a pull, a reinstall at a pinned version, or a macOS setting that had another value before, so it lists those and leaves them.
+`undo` puts back the manifest edits, links and moved files from a sync, last change first, after showing you the list and asking. To undo an older one, pass the file that sync said it recorded its changes in. It lists the commands that sync ran and leaves them alone unless you add `--packages`. With it, an install is uninstalled and an uninstall is installed again, at whatever version is current. That covers a replaced package too: the replacement goes and the old one comes back. A macOS setting that had no value before is deleted, and a mise tool is removed. It can't take back a commit, a push, a pull, a reinstall at a pinned version, or a macOS setting that had another value before, so it lists those and leaves them.
 
 ### Starting from nothing
 
@@ -321,7 +323,7 @@ dotsnitch schedule                       # when it runs, its last exit code and 
 dotsnitch schedule --uninstall
 ```
 
-`--install` writes `~/Library/LaunchAgents/com.dotsnitch.status.plist`, which runs `status --notify` with the dotfiles directory, shell and PATH you installed it from. If the Mac's asleep at that time, launchd runs it when it wakes. If another `status` or a `sync` is already running, the daily run waits up to 5 minutes for it.
+`--install` writes `~/Library/LaunchAgents/com.dotsnitch.status.plist`, which runs `status --notify` with the dotfiles directory, shell and PATH you installed it from. To have it check another directory, add `--repo=`, as in `dotsnitch schedule --install --repo=~/dotfiles`. If the Mac's asleep at that time, launchd runs it when it wakes. If another `status` or a `sync` is already running, the daily run waits up to 5 minutes for it.
 
 Each notification covers what the last one hadn't seen, so drift a `sync` or a prompt refresh found first still gets posted. It names up to three items ("2 new items out of sync (jq, gh-dash)"). With `terminal-notifier` installed, clicking it opens the standalone binary in Terminal. Without it, notifications go through `osascript` and clicking does nothing. Either way macOS may ask once whether to allow them.
 

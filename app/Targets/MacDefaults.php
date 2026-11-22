@@ -80,30 +80,36 @@ final class MacDefaults implements SyncTarget
     {
         $this->writes = [];
         $this->unset = [];
+        $writes = [];
         $items = [];
 
+        // Every file is read before anything is compared, so a later file's line for a key
+        // replaces an earlier file's, the way it would when the scripts run in that order.
         foreach ($manifests as $manifest) {
-            foreach ($this->writesIn($manifest, $log) as $write) {
-                $setting = new Package($write['key'], $write['domain']);
-                $current = $this->shell->run([$this->defaults(), 'read', $write['domain'], $write['key']]);
-                $value = rtrim($current->output, "\n");
-
-                if ($current->successful() && $this->matches($write, $value)) {
-                    continue;
-                }
-
-                $script = basename($manifest);
-                $this->writes[$setting->key()] = $write['command'];
-                $this->unset[$setting->key()] = ! $current->successful();
-                $items[$setting->key()] = new DriftItem($this->key(), DriftKind::Differs, $setting, $current->successful()
-                    ? "is {$value}, {$script} writes {$write['value']}"
-                    : "isn't set, {$script} writes {$write['value']}");
-            }
+            $writes = [...$writes, ...$this->writesIn($manifest, $log)];
         }
 
-        $this->unset = array_filter($this->unset);
+        foreach ($writes as $write) {
+            $setting = new Package($write['key'], $write['domain']);
+            $current = $this->shell->run([$this->defaults(), 'read', $write['domain'], $write['key']]);
+            $value = rtrim($current->output, "\n");
 
-        return new DriftReport($this->key(), array_values($items));
+            if ($current->successful() && $this->matches($write, $value)) {
+                continue;
+            }
+
+            $this->writes[$setting->key()] = $write['command'];
+
+            if (! $current->successful()) {
+                $this->unset[$setting->key()] = true;
+            }
+
+            $items[] = new DriftItem($this->key(), DriftKind::Differs, $setting, $current->successful()
+                ? "is {$value}, {$write['script']} writes {$write['value']}"
+                : "isn't set, {$write['script']} writes {$write['value']}");
+        }
+
+        return new DriftReport($this->key(), $items);
     }
 
     public function actionsFor(DriftItem $item): array
@@ -149,10 +155,11 @@ final class MacDefaults implements SyncTarget
     /**
      * The lines it can compare: `defaults write domain key value`, with or without a type from
      * TYPES. A later line for the same domain and key wins, as it would when the script runs.
-     * `sudo defaults write` lines are passed over, and so is -currentHost or -app.
+     * `sudo defaults write` lines are passed over, and so is -currentHost or -app. So is an
+     * untyped value that starts like a plist, which defaults would store as an array or a dict.
      *
      * @param  callable(string): void  $log
-     * @return array<string, array{domain: string, key: string, type: ?string, value: string, command: list<string>}>
+     * @return array<string, array{domain: string, key: string, type: ?string, value: string, command: list<string>, script: string}>
      */
     private function writesIn(string $manifest, callable $log): array
     {
@@ -171,7 +178,9 @@ final class MacDefaults implements SyncTarget
             }
 
             $typed = count($words) === 4 && in_array($words[2], self::TYPES, true);
-            $plain = count($words) === 3 && (is_numeric($words[2]) || ! str_starts_with($words[2], '-'));
+            $plain = count($words) === 3
+                && (is_numeric($words[2]) || ! str_starts_with($words[2], '-'))
+                && ! preg_match('/^\s*[({<]/', $words[2]);
 
             if (! $typed && ! $plain || str_starts_with($words[0], '-')) {
                 $skipped++;
@@ -186,6 +195,7 @@ final class MacDefaults implements SyncTarget
                 'type' => $typed ? $words[2] : null,
                 'value' => end($words),
                 'command' => [$this->defaults(), 'write', ...$words],
+                'script' => basename($manifest),
             ];
         }
 
@@ -198,9 +208,11 @@ final class MacDefaults implements SyncTarget
 
     /**
      * Splits the rest of the line the way the shell would, as far as that goes without running
-     * it: quotes come off, $HOME is filled in, and a trailing comment is dropped.
+     * it: quotes come off, $HOME and an unquoted leading ~ are filled in, and a trailing comment
+     * is dropped.
      *
-     * @return list<string> empty for a line with any other $, a backtick, or a second command on it
+     * @return list<string> empty for a line with any other $, a backtick, ~name for another
+     *                      user's home, or a second command on it
      */
     private function words(string $rest): array
     {
@@ -220,9 +232,13 @@ final class MacDefaults implements SyncTarget
                 break;
             }
 
+            if ($bare === '~' || str_starts_with($bare ?? '', '~/')) {
+                $bare = $home.substr($bare, 1);
+            }
+
             $word = str_replace(['${HOME}', '$HOME'], $home, $double ?? $bare);
 
-            if (strpbrk($word, '$`') !== false || ($bare !== null && strpbrk($bare, ';&|') !== false)) {
+            if (strpbrk($word, '$`') !== false || ($bare !== null && (strpbrk($bare, ';&|') !== false || str_starts_with($bare, '~')))) {
                 return [];
             }
 

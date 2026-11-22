@@ -24,15 +24,19 @@ use Symfony\Component\Process\Exception\ProcessTimedOutException;
 /**
  * Checks the dotfiles repo itself: changes nobody committed, commits nobody pushed, and commits
  * on the remote this Mac hasn't pulled. Each is about the branch that's checked out, and reads as
- * worktree:main, local:main or remote:main so one can be ignored without hiding the others.
+ * worktree:main, local:main or remote:main, so ignoring unpushed commits doesn't hide the ones
+ * to pull. Uncommitted changes can only be skipped.
  */
 final class RepoState implements ScansWholeRepo, SyncTarget
 {
     /** Seconds. Long enough for a slow connection, short enough that an offline Mac isn't held up. */
     private const REMOTE_TIMEOUT = 15;
 
-    /** Keeps git from waiting on a username or password nobody is there to type. */
-    private const NO_PROMPT = ['GIT_TERMINAL_PROMPT' => '0'];
+    /**
+     * Keeps git from waiting on a username or password nobody is there to type. ssh asks on the
+     * terminal by itself, so its questions are sent to an askpass that always says no.
+     */
+    private const NO_PROMPT = ['GIT_TERMINAL_PROMPT' => '0', 'SSH_ASKPASS' => '/usr/bin/false', 'SSH_ASKPASS_REQUIRE' => 'force'];
 
     /** What each kind of drift offers before Skip. Committing is left to you. */
     private const ACTIONS = [

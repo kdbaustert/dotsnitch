@@ -106,9 +106,33 @@ it('fills in $HOME, takes the quotes off, and lets the last line for a key win',
     expect($items)->toBe([]);
 });
 
+it('fills in an unquoted ~, and leaves a quoted one as it is', function () {
+    $this->shell
+        ->expect([$this->defaults, 'read', 'com.apple.screencapture', 'location'], "/Users/sam/Shots\n")
+        ->expect([$this->defaults, 'read', 'com.apple.screencapture', 'name'], "~/Shots\n");
+
+    $items = scanDefaults($this,
+        'defaults write com.apple.screencapture location ~/Shots',
+        'defaults write com.apple.screencapture name -string "~/Shots"',
+    );
+
+    expect($items)->toBe([]);
+});
+
+it('goes by a later file\'s line for a key an earlier file writes too', function () {
+    $overlay = "{$this->script}.work";
+    file_put_contents($this->script, "defaults write com.apple.dock tilesize -int 33\n");
+    file_put_contents($overlay, "defaults write com.apple.dock tilesize -int 40\n");
+    $this->shell->expect([$this->defaults, 'read', 'com.apple.dock', 'tilesize'], "40\n");
+
+    expect($this->check->scan([$this->script, $overlay], fn () => null)->items)->toBe([]);
+});
+
 it('passes over the lines it cannot compare, and says how many', function () {
     $items = scanDefaults($this,
         'defaults write com.apple.dock persistent-apps -array',
+        "defaults write com.apple.dock persistent-others '(a, b)'",
+        'defaults write com.apple.dock tilesize ~sam/size',
         'defaults write com.apple.dock wvous-corners -array 4 5',
         'defaults write com.apple.dock tilesize -int "$SIZE"',
         'defaults write com.apple.dock autohide -bool true && killall Dock',
@@ -119,7 +143,7 @@ it('passes over the lines it cannot compare, and says how many', function () {
 
     expect($items)->toBe([])
         ->and($this->shell->ran())->toBe([])
-        ->and($this->logged)->toBe(["5 defaults write lines in macos.sh can't be compared"]);
+        ->and($this->logged)->toBe(["7 defaults write lines in macos.sh can't be compared"]);
 });
 
 it('writes a setting, and records how to undo it only when it had no value', function () {

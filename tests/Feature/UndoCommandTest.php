@@ -140,6 +140,7 @@ it('stops ignoring what the sync ignored, and names the commands it leaves alone
     $this->artisan('undo')
         ->expectsOutputToContain('These ran and stay as they are:')
         ->expectsOutputToContain('brew install --formula mpv')
+        ->doesntExpectOutputToContain('Add --packages')
         ->expectsConfirmation('Undo these changes?', 'yes')
         ->assertExitCode(0);
 
@@ -152,7 +153,7 @@ it('leaves packages alone without --packages, and says how to take them back', f
     ]);
 
     $this->artisan('undo')
-        ->expectsOutputToContain('Add --packages to take back the installs and uninstalls among them.')
+        ->expectsOutputToContain('Add --packages to take back the ones that can be.')
         ->expectsOutputToContain('changed nothing that can be put back')
         ->assertExitCode(0);
 

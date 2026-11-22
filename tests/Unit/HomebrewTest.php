@@ -294,13 +294,15 @@ it('replaces by installing the successor, uninstalling the old one, then swappin
         ->expect([$this->brew, 'uninstall', '--formula', 'youtube-dl']);
 
     $steps = $this->homebrew->steps(new Decision(itemOf($report, 'deprecated:formula:youtube-dl'), Action::Replace, [$shared, $overlay]));
-    array_walk($steps, fn (Step $step) => ($step->run)());
+    $effects = array_map(fn (Step $step) => ($step->run)(), $steps);
 
     expect(descriptionsOf($steps))->toBe([
         "{$this->brew} install --formula yt-dlp",
         "{$this->brew} uninstall --formula youtube-dl",
         'Replace formula:youtube-dl with formula:yt-dlp in Brewfile',
     ])
+        ->and($effects[0]['undo'])->toBe([[$this->brew, 'uninstall', '--formula', 'yt-dlp']])
+        ->and($effects[1]['undo'])->toBe([[$this->brew, 'install', '--formula', 'youtube-dl']])
         ->and(file_get_contents($shared))->toBe("brew \"jq\"\nbrew \"yt-dlp\" # old\n")
         ->and(file_get_contents($overlay))->toBe("brew \"mpv\"\n");
 });

@@ -19,7 +19,7 @@ final class UndoCommand extends Command
 {
     protected $signature = 'undo
         {record? : The file sync said it recorded its changes in; the last sync when left out}
-        {--packages : Also uninstall what the sync installed, and install what it uninstalled}
+        {--packages : Also take back the commands that can be: an install, an uninstall, a macOS default that had no value}
         {--dry-run : List what would be put back, and change nothing}';
 
     protected $description = 'Put back the files and links a sync changed';
@@ -56,11 +56,13 @@ final class UndoCommand extends Command
 
         $steps = $undo->steps($record['steps']);
 
+        $packageSteps = $undo->packageSteps($record['steps']);
+
         if ($this->option('packages')) {
-            $steps = [...$steps, ...$undo->packageSteps($record['steps'])];
+            $steps = [...$steps, ...$packageSteps];
             $this->showLeftAlone($undo->oneWayCommands($record['steps']), $record['commit']);
         } else {
-            $this->showLeftAlone($undo->commands($record['steps']), $record['commit']);
+            $this->showLeftAlone($undo->commands($record['steps']), $record['commit'], $packageSteps === [] ? null : 'Add --packages to take back the ones that can be.');
         }
 
         if ($steps === []) {
@@ -99,8 +101,9 @@ final class UndoCommand extends Command
     /**
      * @param  list<string>  $commands
      * @param  ?array{repo: string, message: string}  $commit
+     * @param  ?string  $hint  a line to print under the commands
      */
-    private function showLeftAlone(array $commands, ?array $commit): void
+    private function showLeftAlone(array $commands, ?array $commit, ?string $hint = null): void
     {
         if ($commands !== []) {
             $this->line('These ran and stay as they are:');
@@ -109,8 +112,8 @@ final class UndoCommand extends Command
                 $this->line('  '.OutputFormatter::escape($command));
             }
 
-            if (! $this->option('packages')) {
-                $this->line('Add --packages to take back the installs and uninstalls among them.');
+            if ($hint !== null) {
+                $this->line($hint);
             }
         }
 

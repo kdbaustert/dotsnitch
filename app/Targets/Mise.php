@@ -14,6 +14,7 @@ use App\Sync\DriftItem;
 use App\Sync\DriftKind;
 use App\Sync\DriftReport;
 use App\Sync\Step;
+use JsonException;
 use LogicException;
 use RuntimeException;
 
@@ -28,7 +29,7 @@ final class Mise implements SyncTarget
     /** Node builds from source on some Macs, the same allowance the package managers get. */
     private const INSTALL_TIMEOUT = 1800;
 
-    /** @var array<string, array{version: string, manifest: string}> what the last scan found missing, by tool */
+    /** @var array<string, array{versions: list<string>, manifest: string}> what the last scan found missing, by tool */
     private array $missing = [];
 
     public function __construct(
@@ -61,9 +62,10 @@ final class Mise implements SyncTarget
 
     /**
      * Asks mise itself, with each file standing in for the global config, so "22" and "latest"
-     * resolve the way they will at install time. That lookup can go to the network.
+     * resolve the way they will at install time. That lookup can go to the network. A tool the
+     * config asks for in several versions is one item, with the missing versions as its detail.
      *
-     * @throws RuntimeException when mise can't read a config
+     * @throws RuntimeException when mise can't read a config, or prints something that isn't JSON
      */
     public function scan(array $manifests, callable $log): DriftReport
     {
@@ -76,11 +78,18 @@ final class Mise implements SyncTarget
                 throw new RuntimeException(trim($listed->errorOutput) ?: "mise ls exited with code {$listed->exitCode}");
             }
 
-            foreach (json_decode($listed->output, true, flags: JSON_THROW_ON_ERROR) as $tool => $versions) {
+            try {
+                $tools = json_decode($listed->output, true, flags: JSON_THROW_ON_ERROR);
+            } catch (JsonException $e) {
+                throw new RuntimeException("mise ls didn't print JSON: {$e->getMessage()}", previous: $e);
+            }
+
+            foreach ($tools as $tool => $versions) {
                 foreach ($versions as $version) {
                     // A mise.toml in the folder dotsnitch was run from is listed too.
                     if (realpath($version['source']['path'] ?? '') === realpath($manifest)) {
-                        $this->missing[$tool] = ['version' => $version['version'], 'manifest' => $manifest];
+                        $this->missing[$tool]['versions'][] = $version['version'];
+                        $this->missing[$tool]['manifest'] = $manifest;
                     }
                 }
             }
@@ -89,7 +98,13 @@ final class Mise implements SyncTarget
         $items = [];
 
         foreach ($this->missing as $tool => $found) {
-            $items[] = new DriftItem($this->key(), DriftKind::Missing, new Package((string) $tool, $this->key(), $found['version']));
+            $several = count($found['versions']) > 1;
+            $items[] = new DriftItem(
+                $this->key(),
+                DriftKind::Missing,
+                new Package((string) $tool, $this->key(), $several ? null : $found['versions'][0]),
+                $several ? implode(', ', $found['versions']) : null,
+            );
         }
 
         return new DriftReport($this->key(), $items);
@@ -114,15 +129,16 @@ final class Mise implements SyncTarget
     }
 
     /**
-     * Installs the version the scan resolved, so the undo removes exactly that one.
+     * Installs the versions the scan resolved, so the undo removes exactly those.
      */
     private function installStep(string $tool): Step
     {
         $found = $this->missing[$tool] ?? throw new RuntimeException("{$tool} wasn't in the last scan");
-        $command = [$this->mise(), 'install', "{$tool}@{$found['version']}"];
+        $versions = array_map(fn (string $version) => "{$tool}@{$version}", $found['versions']);
+        $command = [$this->mise(), 'install', ...$versions];
         $environment = $this->readingFrom($found['manifest']);
 
-        return new Step(Step::commandLine($command), function () use ($command, $environment, $tool, $found) {
+        return new Step(Step::commandLine($command), function () use ($command, $environment, $versions) {
             $result = $this->shell->run($command, self::INSTALL_TIMEOUT, $environment);
 
             if (! $result->successful()) {
@@ -132,7 +148,7 @@ final class Mise implements SyncTarget
             return [
                 'kind' => 'command',
                 'command' => $command,
-                'undo' => [[$this->mise(), 'uninstall', "{$tool}@{$found['version']}"]],
+                'undo' => [[$this->mise(), 'uninstall', ...$versions]],
                 'environment' => $environment,
             ];
         });

@@ -486,7 +486,7 @@ abstract class PackageManagerTarget implements ComparesSides, SyncTarget
         $steps = [$this->commandStep($this->installCommand($replacement), [$this->uninstallCommand($replacement)])];
 
         if (isset($this->installedByKey[$package->key()])) {
-            $steps[] = $this->commandStep($this->uninstallCommand($package));
+            $steps[] = $this->commandStep($this->uninstallCommand($package), $this->installingAgain($package));
         }
 
         foreach ($this->manifestsListing($manifests, $package) as $manifest) {
