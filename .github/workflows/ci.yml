@@ -17,12 +17,14 @@ jobs:
       matrix:
         # macos-15-intel is the last Intel image GitHub offers, until macOS 15 retires in 2027.
         runner: [macos-15, macos-15-intel]
+        # 8.4 is the oldest composer.json allows, 8.5 is what the release is built on.
+        php: ['8.4', '8.5']
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.5'
+          php-version: ${{ matrix.php }}
           extensions: pcntl, posix
           coverage: none
       - run: composer install --no-interaction --no-progress
