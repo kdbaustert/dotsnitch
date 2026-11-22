@@ -24,6 +24,8 @@ use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
 use Symfony\Component\Console\Exception\InvalidArgumentException;
 use Symfony\Component\Console\Formatter\OutputFormatter;
+use Symfony\Component\Console\Helper\Helper;
+use Symfony\Component\Console\Terminal;
 
 use function Laravel\Prompts\spin;
 use function Laravel\Prompts\table;
@@ -41,6 +43,9 @@ trait ScansChecks
 
     /** Where the last picked checks are saved, so the next run starts from them. */
     private const SELECTION_SETTING = 'checks';
+
+    /** Spaces between two checks listed side by side. */
+    private const COLUMN_GAP = 4;
 
     /** @var array<string, Check> the checks that ran, by key */
     private array $checksByKey = [];
@@ -254,9 +259,8 @@ trait ScansChecks
     }
 
     /**
-     * Each check's name, then its items one to a line: the kind, padded so the items line up, and
-     * the item. Its notes go on the lines below it, so a long path doesn't push the list past the
-     * edge of the terminal.
+     * The checks two across, when the terminal has room for a pair. One that doesn't fit, and the
+     * last of an odd number, gets the full width.
      *
      * @param  list<DriftItem>  $items  in check order
      */
@@ -268,22 +272,58 @@ trait ScansChecks
             $byCheck[$item->check][] = $item;
         }
 
-        foreach ($byCheck as $check => $group) {
-            $kinds = array_map(fn (DriftItem $item) => $item->kind->label().($saved->isNew($item) ? ' (new)' : ''), $group);
-            $width = max(array_map(strlen(...), $kinds));
+        $blocks = array_map(fn (array $group) => $this->blockOf($group, $saved), array_values($byCheck));
+        $formatter = $this->output->getFormatter();
+        $widthOf = fn (string $line) => Helper::width(Helper::removeDecoration($formatter, $line));
+        $widest = fn (array $block) => max(array_map($widthOf, $block));
+        $terminal = (new Terminal)->getWidth();
+        $pairs = [];
+
+        while ($blocks !== []) {
+            $left = array_shift($blocks);
+            $fits = $blocks !== [] && $widest($left) + self::COLUMN_GAP + $widest($blocks[0]) <= $terminal;
+            $pairs[] = [$left, $fits ? array_shift($blocks) : []];
+        }
+
+        // The widest left column, so the right ones line up down the screen where that still fits.
+        $shared = max([0, ...array_map(fn (array $pair) => $pair[1] === [] ? 0 : $widest($pair[0]), $pairs)]);
+
+        foreach ($pairs as [$left, $right]) {
+            $leftWidth = ($right !== [] && $shared + self::COLUMN_GAP + $widest($right) <= $terminal ? $shared : $widest($left)) + self::COLUMN_GAP;
 
             $this->newLine();
-            $this->line("<options=bold>{$this->checksByKey[$check]->target->label()}</>");
 
-            foreach ($group as $index => $item) {
-                // Escaped, since a path or a name can hold something that reads as a color tag.
-                $this->line(sprintf('  <fg=%s>%s</>  %s', $this->colorOf($item->kind), str_pad($kinds[$index], $width), OutputFormatter::escape($item->subject->key())));
+            foreach (array_keys($left + $right) as $row) {
+                $line = $left[$row] ?? '';
 
-                foreach ($this->notesOn($item) as $note) {
-                    $this->line(str_repeat(' ', $width + 4).'<fg=gray>'.OutputFormatter::escape($note).'</>');
-                }
+                $this->line(isset($right[$row]) ? $line.str_repeat(' ', $leftWidth - $widthOf($line)).$right[$row] : $line);
             }
         }
+    }
+
+    /**
+     * A check's name, then its items one to a line: the kind, padded so the items line up, and
+     * the item. Its notes go on the lines below it, so a long path doesn't make the block wider.
+     *
+     * @param  non-empty-list<DriftItem>  $group  one check's items
+     * @return non-empty-list<string> lines with their color tags
+     */
+    private function blockOf(array $group, SavedScan $saved): array
+    {
+        $kinds = array_map(fn (DriftItem $item) => $item->kind->label().($saved->isNew($item) ? ' (new)' : ''), $group);
+        $width = max(array_map(strlen(...), $kinds));
+        $lines = ["<options=bold>{$this->checksByKey[$group[0]->check]->target->label()}</>"];
+
+        foreach ($group as $index => $item) {
+            // Escaped, since a path or a name can hold something that reads as a color tag.
+            $lines[] = sprintf('  <fg=%s>%s</>  %s', $this->colorOf($item->kind), str_pad($kinds[$index], $width), OutputFormatter::escape($item->subject->key()));
+
+            foreach ($this->notesOn($item) as $note) {
+                $lines[] = str_repeat(' ', $width + 4).'<fg=gray>'.OutputFormatter::escape($note).'</>';
+            }
+        }
+
+        return $lines;
     }
 
     /**

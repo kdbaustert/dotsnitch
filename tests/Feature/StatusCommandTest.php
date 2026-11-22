@@ -53,6 +53,28 @@ it('runs every ready check without asking, whatever sync last picked, and exits 
     expect(app(ReportStore::class)->latest()->checks)->toBe(['other' => ['other:untracked:formula:jq']]);
 });
 
+// The terminal is 80 wide under test.
+it('lists two checks side by side when both fit across the terminal', function () {
+    $this->app->instance(Homebrew::class, fakeTarget('brew', fails: false));
+
+    $this->artisan('status', ['--repo' => "{$this->dir}/repo"])
+        ->expectsOutput('Brew                       Other')
+        ->expectsOutput('  untracked  formula:jq      untracked  formula:jq')
+        ->assertExitCode(0);
+});
+
+it('lists two checks one under the other when the pair is wider than the terminal', function () {
+    $this->app->instance(Homebrew::class, fakeTarget('brew', fails: false));
+    $this->other->package = str_repeat('a', 50);
+
+    $this->artisan('status', ['--repo' => "{$this->dir}/repo"])
+        ->expectsOutput('Brew')
+        ->expectsOutput('  untracked  formula:jq')
+        ->expectsOutput('Other')
+        ->expectsOutput('  untracked  formula:'.str_repeat('a', 50))
+        ->assertExitCode(0);
+});
+
 it('leaves what each side has for a package to sync', function () {
     $this->artisan('status', ['--repo' => "{$this->dir}/repo"])
         ->expectsOutputToContain('untracked  formula:jq')

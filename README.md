@@ -84,7 +84,7 @@ dotsnitch --repo=~/dotfiles --checks=brew --dry-run
 
 Plain `dotsnitch` (the `sync` command) asks which checks to run. The first time, it ticks every check that's installed and has a manifest. After that it starts from what you picked last. `--checks=brew,pnpm` skips the question.
 
-You get a live status for each check while it scans. Then there's a summary row per check and a list of everything not installed, untracked, deprecated or disabled, grouped by check. Under each package, `sync` says what your dotfiles have and what this Mac has, like "listed in Brewfile" and "not installed". If a check can't finish, its row says why, the others still run, and dotsnitch exits with 1.
+You get a live status for each check while it scans. Then there's a summary row per check and a list of everything not installed, untracked, deprecated or disabled, grouped by check. The checks sit two across where the terminal is wide enough for a pair. Under each package, `sync` says what your dotfiles have and what this Mac has, like "listed in Brewfile" and "not installed". If a check can't finish, its row says why, the others still run, and dotsnitch exits with 1.
 
 ## What it checks
 
