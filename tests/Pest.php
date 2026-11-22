@@ -26,8 +26,8 @@ uses(TestCase::class)->in('Feature');
 
 /**
  * A check that reads any Brewfile and either throws or reports $package, once per kind in $kinds.
- * Adding it appends a line through the real ManifestEditor; uninstalling only records the call in
- * $ran, or fails when $uninstallError is set.
+ * Adding it appends a line through the real ManifestEditor; installing and uninstalling only record
+ * the call in $ran, or fails when $uninstallError is set.
  */
 function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarget
 {
@@ -117,11 +117,11 @@ function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarge
          */
         public function actionsFor(DriftItem $item): array
         {
-            return ['add' => 'Add to dotfiles', 'uninstall' => 'Uninstall', 'ignore' => 'Ignore on this Mac', 'skip' => 'Skip'];
+            return ['add' => 'Add to dotfiles', 'uninstall' => 'Uninstall', 'install' => 'Install', 'ignore' => 'Ignore on this Mac', 'skip' => 'Skip'];
         }
 
         /**
-         * Add and Uninstall get one step each. Every other action does nothing.
+         * Add, Install and Uninstall get one step each. Every other action does nothing.
          */
         public function steps(Decision $decision): array
         {
@@ -130,6 +130,11 @@ function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarge
                     "Add formula:{$this->package} to ".basename($decision->manifests[0]),
                     fn () => app(ManifestEditor::class)->edit($decision->manifests[0], fn (string $contents) => $contents."brew \"jq\"\n"),
                 )],
+                Action::Install => [new Step("brew install --formula {$this->package}", function () {
+                    $this->ran[] = "install {$this->package}";
+
+                    return ['kind' => 'command', 'command' => ['brew', 'install', '--formula', $this->package]];
+                })],
                 Action::Uninstall => [new Step('brew uninstall --formula jq', function () {
                     if ($this->uninstallError !== null) {
                         throw new RuntimeException($this->uninstallError);

@@ -21,6 +21,7 @@ final class SyncCommand extends Command
     protected $signature = 'sync
         {--repo= : Path to your dotfiles directory}
         {--checks= : Checks to run, comma-separated (such as brew,npm); skips the prompt}
+        {--install-missing : Install everything that isn\'t installed, without asking, and leave the rest}
         {--dry-run : Show the plan and the exact commands, and change nothing}';
 
     protected $description = 'Compare your dotfiles with this Mac and resolve what is out of sync';
@@ -30,7 +31,7 @@ final class SyncCommand extends Command
 
     /**
      * Asks which checks to run, scans each one with a live status, saves and prints the drift,
-     * then asks what to do about it. Holds the status lock from the scan on, so a status run
+     * then asks what to do about it, or with --install-missing installs what's missing. Holds the status lock from the scan on, so a status run
      * can't save or post a half-done sync.
      *
      * @return int failure when any check couldn't finish (the others still run), when a
@@ -60,7 +61,7 @@ final class SyncCommand extends Command
             return $scanned;
         }
 
-        $resolved = $this->resolve($reports);
+        $resolved = $this->option('install-missing') ? $this->installMissing($reports) : $this->resolve($reports);
 
         return $scanned === self::SUCCESS ? $resolved : $scanned;
     }

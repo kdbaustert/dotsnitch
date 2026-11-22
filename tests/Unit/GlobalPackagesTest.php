@@ -19,10 +19,11 @@ use App\Targets\Npm;
 use App\Targets\Pipx;
 use App\Targets\Pnpm;
 use App\Targets\Uv;
+use App\Targets\Vscode;
 use Tests\Fakes\FakeShell;
 
 /**
- * A temp home with fake composer, npm, pnpm, mas, gh, pipx, uv and cargo on PATH. npm is a symlink into
+ * A temp home with fake composer, npm, pnpm, mas, gh, pipx, uv, cargo and code on PATH. npm is a symlink into
  * lib/node_modules/npm the way a node install lays it out. The dir goes when the object does.
  */
 final class GlobalsMac
@@ -45,7 +46,7 @@ final class GlobalsMac
         mkdir("{$this->dir}/repo");
         mkdir("{$this->dir}/lib/node_modules/npm/bin", 0755, true);
 
-        foreach (['bin/composer', 'bin/pnpm', 'bin/mas', 'bin/gh', 'bin/pipx', 'bin/uv', 'bin/cargo', 'lib/node_modules/npm/bin/npm-cli.js'] as $file) {
+        foreach (['bin/composer', 'bin/pnpm', 'bin/mas', 'bin/gh', 'bin/pipx', 'bin/uv', 'bin/cargo', 'bin/code', 'lib/node_modules/npm/bin/npm-cli.js'] as $file) {
             file_put_contents("{$this->dir}/{$file}", "#!/bin/sh\n");
             chmod("{$this->dir}/{$file}", 0755);
         }
@@ -459,4 +460,198 @@ it('reads cargo crates from crates.io and git, skips their binaries, and install
         ['untracked', 'crate:cargo-edit', null],
         ['untracked', 'crate:tool', null],
     ])->and($install->description)->toBe($mac->bin('cargo').' install bat@0.24');
+});
+
+it('flags an installed version the pin leaves out, and installs the pin over it', function () {
+    $mac = new GlobalsMac;
+    $npm = npmOn($mac);
+
+    $report = $npm->scan([$mac->manifest('npm-global.txt', "neovim@4\n")], fn () => null);
+    $item = globalItem($report, 'version:package:neovim');
+    [$install] = $npm->steps(new Decision($item, Action::Install));
+
+    expect(globalDrift($report))->toBe([['version', 'package:neovim', 'pinned to 4']])
+        ->and($npm->actionsFor($item))->toBe(['install' => 'Install 4', 'ignore' => 'Ignore on this Mac', 'skip' => 'Skip'])
+        ->and($npm->sides($item))->toBe(['dotfiles' => 'listed in npm-global.txt', 'mac' => 'installed 5.5.0'])
+        ->and($install->description)->toBe($mac->bin('npm').' i -g neovim@4');
+});
+
+it('reads a whole version, a partial one and a caret range as a pin, and passes anything else', function (string $pin, bool $flagged) {
+    $mac = new GlobalsMac;
+
+    $report = npmOn($mac)->scan([$mac->manifest('npm-global.txt', "neovim@{$pin}\n")], fn () => null);
+
+    expect($report->items !== [])->toBe($flagged);
+})->with([
+    ['5', false],
+    ['5.5', false],
+    ['5.5.0', false],
+    ['v5.5.0', false],
+    ['5.50', true],
+    ['5.4', true],
+    ['^5.1', false],
+    ['^5.6', true],
+    ['^4', true],
+    ['^0.5', true],
+    ['latest', false],
+    ['>=6', false],
+]);
+
+it('checks a Composer caret constraint against a version with a v on it', function () {
+    $mac = new GlobalsMac;
+
+    $report = composerOn($mac)->scan([$mac->manifest('Composerfile', "fzaninotto/faker:^1.6\npsr/log:^3\n")], fn () => null);
+
+    expect(globalDrift($report))->toBe([['version', 'package:fzaninotto/faker', 'pinned to ^1.6']]);
+});
+
+it('checks pipx and uv versions against a specifier, extras and all', function (string $specifier, bool $flagged) {
+    $mac = new GlobalsMac;
+    $mac->shell->expect([$mac->bin('uv'), 'tool', 'list'], $mac->fixture('uv/tool-list.txt'));
+    $uv = new Uv($mac->shell, $mac->paths, $mac->editor);
+
+    $report = $uv->scan([$mac->manifest('uv-tools.txt', "httpie\nruff{$specifier}\n")], fn () => null);
+
+    expect($report->items !== [])->toBe($flagged);
+})->with([
+    ['==0.7.2', false],
+    ['==0.7.*', false],
+    ['==0.6.*', true],
+    ['!=0.7.*', true],
+    ['>=0.6,<1', false],
+    ['>=0.6,<0.7', true],
+    ['[extra]>=0.8', true],
+    ['~=0.6', false],
+]);
+
+it('forces a pipx install over a version off its pin', function () {
+    $mac = new GlobalsMac;
+    $mac->shell->expect([$mac->bin('pipx'), 'list', '--json'], $mac->fixture('pipx/list.json'));
+    $pipx = new Pipx($mac->shell, $mac->paths, $mac->editor);
+
+    $report = $pipx->scan([$mac->manifest('pipx.txt', "black==24.1.0\npoetry==1.8.4\n")], fn () => null);
+    [$install] = $pipx->steps(new Decision(globalItem($report, 'version:package:black'), Action::Install));
+
+    expect(globalDrift($report))->toBe([['version', 'package:black', 'pinned to ==24.1.0']])
+        ->and($install->description)->toBe($mac->bin('pipx').' install --force black==24.1.0');
+});
+
+it('removes a gh extension before installing the tag it is pinned to', function () {
+    $mac = new GlobalsMac;
+    $mac->shell->expect([$mac->bin('gh'), 'extension', 'list'], $mac->fixture('gh/extension-list.tsv'));
+    $gh = new Gh($mac->shell, $mac->paths, $mac->editor);
+
+    $report = $gh->scan([$mac->manifest('gh-extensions.txt', "dlvhdr/gh-dash@v4.7.0\nseachicken/gh-poi@v0.14.1\ngh-mine\n")], fn () => null);
+    $steps = $gh->steps(new Decision(globalItem($report, 'version:extension:dlvhdr/gh-dash'), Action::Install));
+
+    expect(globalDrift($report))->toBe([['version', 'extension:dlvhdr/gh-dash', 'pinned to v4.7.0']])
+        ->and(array_column($steps, 'description'))->toBe([
+            $mac->bin('gh').' extension remove dlvhdr/gh-dash',
+            $mac->bin('gh').' extension install dlvhdr/gh-dash --pin v4.7.0',
+        ]);
+});
+
+it('flags a crate on another version than the one cargo.txt pins', function () {
+    $mac = new GlobalsMac;
+    $mac->shell->expect([$mac->bin('cargo'), 'install', '--list'], $mac->fixture('cargo/install-list.txt'));
+    $cargo = new Cargo($mac->shell, $mac->paths, $mac->editor);
+
+    $report = $cargo->scan([$mac->manifest('cargo.txt', "ripgrep@14.0\ncargo-edit@0.13\ntool\n")], fn () => null);
+
+    expect(globalDrift($report))->toBe([['version', 'crate:ripgrep', 'pinned to 14.0']]);
+});
+
+it('reads the mas lines of a Brewfile and adds an app as one', function () {
+    $mac = new GlobalsMac;
+    $mas = masOn($mac);
+    $brewfile = $mac->manifest('Brewfile', "brew \"jq\"\nmas \"Cyberduck\", id: 409222199\nmas 'Xcode', id: 497799835\n");
+
+    $report = $mas->scan([$brewfile], fn () => null);
+    [$add] = $mas->steps(new Decision(globalItem($report, 'untracked:app:1355679052'), Action::AddToManifest, [$brewfile]));
+    [$remove] = $mas->steps(new Decision(globalItem($report, 'missing:app:497799835'), Action::RemoveFromManifest, [$brewfile]));
+    ($add->run)();
+    ($remove->run)();
+
+    expect(array_slice(globalDrift($report), 0, 2))->toBe([
+        ['missing', 'app:497799835', 'Xcode'],
+        ['untracked', 'app:1569813296', '1Password for Safari'],
+    ])->and(file_get_contents($brewfile))->toBe("brew \"jq\"\nmas \"Cyberduck\", id: 409222199\nmas \"Dropover\", id: 1355679052\n");
+});
+
+it('only takes a Brewfile as a manifest when it has a line for the check', function () {
+    $mac = new GlobalsMac;
+    $mas = new Mas($mac->shell, $mac->paths, $mac->editor);
+    $vscode = new Vscode($mac->shell, $mac->paths, $mac->editor);
+    $brewfile = $mac->manifest('Brewfile.work', "brew \"jq\"\nvscode \"editorconfig.editorconfig\"\n");
+
+    expect($mas->hasEntriesIn($brewfile))->toBeFalse()
+        ->and($vscode->hasEntriesIn($brewfile))->toBeTrue()
+        ->and($mas->hasEntriesIn($mac->manifest('mas.txt', '')))->toBeTrue();
+});
+
+it('checks VS Code extensions against a list or a Brewfile, whatever the case of an id', function (string $name, string $contents, string $afterAdd) {
+    $mac = new GlobalsMac;
+    $mac->shell->expect([$mac->bin('code'), '--list-extensions', '--show-versions'], "EditorConfig.EditorConfig@0.16.4\nbmewburn.vscode-intelephense-client@1.14.4\n");
+    $vscode = new Vscode($mac->shell, $mac->paths, $mac->editor);
+    $manifest = $mac->manifest($name, $contents);
+
+    $report = $vscode->scan([$manifest], fn () => null);
+    [$install] = $vscode->steps(new Decision(globalItem($report, 'missing:extension:redhat.vscode-yaml'), Action::Install));
+    [$uninstall] = $vscode->steps(new Decision(globalItem($report, 'untracked:extension:bmewburn.vscode-intelephense-client'), Action::Uninstall));
+    [$add] = $vscode->steps(new Decision(globalItem($report, 'untracked:extension:bmewburn.vscode-intelephense-client'), Action::AddToManifest, [$manifest]));
+    ($add->run)();
+
+    expect(globalDrift($report))->toBe([
+        ['missing', 'extension:redhat.vscode-yaml', null],
+        ['untracked', 'extension:bmewburn.vscode-intelephense-client', null],
+    ])->and($install->description)->toBe($mac->bin('code').' --install-extension redhat.vscode-yaml')
+        ->and($uninstall->description)->toBe($mac->bin('code').' --uninstall-extension bmewburn.vscode-intelephense-client')
+        ->and(file_get_contents($manifest))->toBe($afterAdd);
+})->with([
+    'a list' => [
+        'vscode-extensions.txt',
+        "editorconfig.editorconfig\nRedHat.vscode-yaml\n",
+        "editorconfig.editorconfig\nRedHat.vscode-yaml\nbmewburn.vscode-intelephense-client\n",
+    ],
+    'a Brewfile' => [
+        'Brewfile',
+        "cask \"zed\"\nvscode \"editorconfig.editorconfig\"\nvscode \"RedHat.vscode-yaml\"\n",
+        "cask \"zed\"\nvscode \"editorconfig.editorconfig\"\nvscode \"RedHat.vscode-yaml\"\nvscode \"bmewburn.vscode-intelephense-client\"\n",
+    ],
+]);
+
+it('flags an extension off the version its list pins', function () {
+    $mac = new GlobalsMac;
+    $mac->shell->expect([$mac->bin('code'), '--list-extensions', '--show-versions'], "editorconfig.editorconfig@0.16.4\n");
+    $vscode = new Vscode($mac->shell, $mac->paths, $mac->editor);
+
+    $report = $vscode->scan([$mac->manifest('vscode-extensions.txt', "editorconfig.editorconfig@0.16.3\n")], fn () => null);
+    [$install] = $vscode->steps(new Decision($report->items[0], Action::Install));
+
+    expect(globalDrift($report))->toBe([['version', 'extension:editorconfig.editorconfig', 'pinned to 0.16.3']])
+        ->and($install->description)->toBe($mac->bin('code').' --install-extension editorconfig.editorconfig@0.16.3');
+});
+
+it('lists outdated npm globals, which npm reports with exit code 1', function () {
+    $mac = new GlobalsMac;
+    $mac->shell->expect([$mac->bin('npm'), 'outdated', '-g', '--json'], '{"typescript": {"current": "5.9.2", "wanted": "5.9.3", "latest": "6.0.1", "location": "/lib/node_modules/typescript"}}', exitCode: 1);
+
+    [$entry] = (new Npm($mac->shell, $mac->paths, $mac->editor))->outdated();
+
+    expect([$entry['package']->key(), $entry['package']->version, $entry['latest']])->toBe(['package:typescript', '5.9.2', '6.0.1']);
+});
+
+it('lists outdated Composer globals, and takes the [] Composer prints for none', function () {
+    $mac = new GlobalsMac;
+    $composer = new Composer($mac->shell, $mac->paths, $mac->editor);
+    $command = [$mac->bin('composer'), 'global', 'outdated', '--direct', '--format=json'];
+    $mac->shell->expect($command, '{"installed": [{"name": "laravel/installer", "version": "v5.1.0", "latest": "v5.2.0"}]}');
+
+    [$entry] = $composer->outdated();
+
+    expect([$entry['package']->key(), $entry['package']->version, $entry['latest']])->toBe(['package:laravel/installer', 'v5.1.0', 'v5.2.0']);
+
+    $mac->shell->expect($command, "[]\n");
+
+    expect($composer->outdated())->toBe([]);
 });

@@ -119,10 +119,15 @@ abstract class PackageManagerTarget implements ComparesSides, SyncTarget
             ->map(fn (Package $package) => new DriftItem($this->key(), DriftKind::Missing, $package));
         $untracked = $installed->except($tracked)
             ->map(fn (Package $package) => new DriftItem($this->key(), DriftKind::Untracked, $package));
+        $offPin = $listed->intersectByKeys($installed)
+            ->filter(fn (Package $package, string $key) => $package->version !== null
+                && $installed[$key]->version !== null
+                && ! $this->pinAllows($package->version, $installed[$key]->version))
+            ->map(fn (Package $package) => new DriftItem($this->key(), DriftKind::Version, $package, "pinned to {$package->version}"));
 
         // An otherDrift() item with the same key replaces the plain one, so a check can explain a
         // missing entry without listing it twice.
-        $items = collect([...$missing->values(), ...$untracked->values(), ...$this->otherDrift($listed, $installed, $log)])
+        $items = collect([...$missing->values(), ...$untracked->values(), ...$offPin->values(), ...$this->otherDrift($listed, $installed, $log)])
             ->keyBy(fn (DriftItem $item) => $item->key());
 
         return new DriftReport($this->key(), $items->values()->all());
@@ -140,6 +145,7 @@ abstract class PackageManagerTarget implements ComparesSides, SyncTarget
                 ? [Action::Install, Action::RemoveFromManifest, Action::Ignore]
                 : [Action::RemoveFromManifest, Action::Ignore],
             DriftKind::Untracked => [Action::AddToManifest, Action::Uninstall, Action::Ignore],
+            DriftKind::Version => [Action::Install, Action::Ignore],
             DriftKind::Deprecated, DriftKind::Disabled => $this->replacementFor($package) === null
                 ? [Action::RemoveFromManifest, Action::Ignore]
                 : [Action::Replace, Action::RemoveFromManifest, Action::Ignore],
@@ -163,7 +169,9 @@ abstract class PackageManagerTarget implements ComparesSides, SyncTarget
         $package = $this->packageOf($decision->item);
 
         return match ($decision->action) {
-            Action::Install => [$this->commandStep($this->installCommand($package))],
+            Action::Install => $decision->item->kind === DriftKind::Version
+                ? array_map($this->commandStep(...), $this->reinstallCommands($package))
+                : [$this->commandStep($this->installCommand($package))],
             Action::Uninstall => [$this->commandStep($this->uninstallCommand($package))],
             Action::AddToManifest => [$this->addStep($decision->manifests, $package)],
             Action::RemoveFromManifest => $this->removeSteps($decision->manifests, $package),
@@ -262,6 +270,43 @@ abstract class PackageManagerTarget implements ComparesSides, SyncTarget
     }
 
     /**
+     * Whether an installed version is one the manifest's pin asks for. Reads a whole or partial
+     * version, such as 6 or 14.1.1, and a caret range. Anything else, such as a tag or a wider
+     * range, passes, so a pin dotsnitch can't read is never reported.
+     *
+     * @param  string  $pin  what follows the name in the manifest
+     */
+    protected function pinAllows(string $pin, string $version): bool
+    {
+        if (! preg_match('/^(\^?)v?(\d+(?:\.\d+)*)$/', $pin, $match)) {
+            return true;
+        }
+
+        $version = ltrim($version, 'v');
+
+        if ($match[1] === '') {
+            return $version === $match[2] || str_starts_with($version, $match[2].'.');
+        }
+
+        // ^1.2 stops before 2, and ^0.3 before 0.4: the first part that isn't 0 is the one that can't change.
+        $parts = array_map(intval(...), explode('.', $match[2]));
+        $fixed = array_find_key($parts, fn (int $part) => $part > 0) ?? array_key_last($parts);
+        $ceiling = implode('.', [...array_slice($parts, 0, $fixed), $parts[$fixed] + 1]);
+
+        return version_compare($version, $match[2], '>=') && version_compare($version, $ceiling, '<');
+    }
+
+    /**
+     * The commands that put the pinned version in place of the one installed.
+     *
+     * @return list<list<string>>
+     */
+    protected function reinstallCommands(Package $package): array
+    {
+        return [$this->installCommand($package)];
+    }
+
+    /**
      * True for name.json and for its overlays, such as name.json.mac or a hostname with dots in it,
      * like name.json.kennys-mbp.local.
      *
@@ -352,6 +397,7 @@ abstract class PackageManagerTarget implements ComparesSides, SyncTarget
         return match (true) {
             $action === Action::Replace => 'Replace with '.$this->replacementFor($this->packageOf($item))?->name,
             $action === Action::Ignore && in_array($item->kind, self::FLAGGED, true) => 'Keep (ignore on this Mac)',
+            $action === Action::Install && $item->kind === DriftKind::Version => "Install {$this->packageOf($item)->version}",
             default => $action->label(),
         };
     }

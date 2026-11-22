@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Targets;
 
+use App\Contracts\ListsOutdated;
 use App\Contracts\ManifestFormat;
 use App\Contracts\Shell;
 use App\Data\Package;
@@ -20,7 +21,7 @@ use RuntimeException;
  * untracked. The installed side always comes from `composer global show`, which keeps the check
  * right when the manifest is Composer's own composer.json linked in from dotfiles.
  */
-final class Composer extends PackageManagerTarget
+final class Composer extends PackageManagerTarget implements ListsOutdated
 {
     private readonly ComposerSpec $spec;
 
@@ -88,6 +89,21 @@ final class Composer extends PackageManagerTarget
             ->map(fn (mixed $package) => is_string($package['name'] ?? null)
                 ? new Package($package['name'], 'package', $package['version'] ?? null)
                 : throw new RuntimeException('composer global show listed a package with no name'));
+    }
+
+    /**
+     * Direct requires only, like the check itself.
+     *
+     * @throws RuntimeException when composer prints no JSON
+     */
+    public function outdated(): array
+    {
+        $listed = $this->json([$this->binary('composer'), 'global', 'outdated', '--direct', '--format=json']);
+
+        return array_map(
+            fn (array $entry) => ['package' => new Package($entry['name'], 'package', $entry['version'] ?? null), 'latest' => $entry['latest']],
+            array_values($listed['installed'] ?? []),
+        );
     }
 
     /**

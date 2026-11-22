@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Targets;
 
+use App\Contracts\ListsOutdated;
 use App\Contracts\ManifestFormat;
 use App\Data\Package;
 use App\Data\ProcessResult;
@@ -17,7 +18,7 @@ use RuntimeException;
  * Formulae, casks and taps. Everything comes from one `brew info --json=v2 --installed` call per
  * scan, which also carries the aliases, dependencies and deprecation flags.
  */
-final class Homebrew extends PackageManagerTarget
+final class Homebrew extends PackageManagerTarget implements ListsOutdated
 {
     /** Keeps brew from updating itself or printing hints in the middle of a scan. */
     public const ENVIRONMENT = ['HOMEBREW_NO_AUTO_UPDATE' => '1', 'HOMEBREW_NO_ENV_HINTS' => '1'];
@@ -256,6 +257,34 @@ final class Homebrew extends PackageManagerTarget
     protected function canInstall(Package $package): bool
     {
         return ! isset($this->notInstallable[$package->key()]);
+    }
+
+    /**
+     * Leaves out a formula `brew pin` holds back, since that one is old on purpose.
+     *
+     * @throws RuntimeException when brew fails or prints something other than JSON
+     */
+    public function outdated(): array
+    {
+        $result = $this->brewRun(['outdated', '--json=v2']);
+        $listed = json_decode($result->output, true);
+
+        if (! $result->successful() || ! is_array($listed)) {
+            throw new RuntimeException('brew outdated failed: '.(trim($result->errorOutput) ?: "exited with code {$result->exitCode}"));
+        }
+
+        $outdated = [];
+
+        foreach (['formula', 'cask'] as $type) {
+            foreach ($listed[$this->plural($type)] ?? [] as $entry) {
+                if (! ($entry['pinned'] ?? false)) {
+                    $installed = $entry['installed_versions'];
+                    $outdated[] = ['package' => new Package($entry['name'], $type, end($installed) ?: null), 'latest' => $entry['current_version']];
+                }
+            }
+        }
+
+        return $outdated;
     }
 
     /**

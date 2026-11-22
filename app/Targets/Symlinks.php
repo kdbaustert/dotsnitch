@@ -38,7 +38,7 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
     private const ACTIONS = [
         DriftKind::NotLinked->value => [Action::Link],
         DriftKind::Conflict->value => [Action::BackUpAndLink, Action::ShowDiff, Action::Adopt],
-        DriftKind::WrongTarget->value => [Action::Repoint],
+        DriftKind::WrongTarget->value => [Action::Repoint, Action::RepointAndBackUp],
         DriftKind::Broken->value => [Action::Unlink],
     ];
 
@@ -135,6 +135,7 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
             Action::BackUpAndLink => [$this->backUpStep($link->target), $this->linkStep($link)],
             Action::Adopt => [$this->backUpStep($link->source), $this->adoptStep($link), $this->linkStep($link)],
             Action::Repoint => [$this->repointStep($link)],
+            Action::RepointAndBackUp => [$this->repointStep($link), ...$this->backUpOldDestinationSteps($link)],
             Action::Unlink => [$this->unlinkStep($link)],
             Action::Ignore, Action::Skip => [],
             default => throw new LogicException("Symlinks can't {$decision->action->value} a link"),
@@ -321,6 +322,27 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
 
             return ['kind' => 'repoint', 'target' => $link->target, 'source' => $link->source, 'pointed_to' => $pointedTo];
         });
+    }
+
+    /**
+     * Moves what the link points at now into the backup folder, for after the repoint. Read when
+     * the plan is made, so the step can show the path.
+     *
+     * @return list<Step> none when the link already points at nothing
+     *
+     * @throws RuntimeException when the target isn't a symlink anymore
+     */
+    private function backUpOldDestinationSteps(Link $link): array
+    {
+        $pointedTo = @readlink($link->target);
+
+        if ($pointedTo === false) {
+            throw new RuntimeException("{$link->target} isn't a symlink anymore");
+        }
+
+        $destination = str_starts_with($pointedTo, '/') ? $pointedTo : dirname($link->target).'/'.$pointedTo;
+
+        return file_exists($destination) ? [$this->backUpStep($destination)] : [];
     }
 
     /**

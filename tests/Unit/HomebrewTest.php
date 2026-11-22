@@ -326,3 +326,24 @@ it('throws when no manifest has a line it can edit', function () {
 
     $this->homebrew->steps(new Decision(itemOf($report, 'missing:formula:mpv'), Action::RemoveFromManifest, [$brewfile]));
 })->throws(RuntimeException::class, "mpv isn't on a line dotsnitch can edit in Brewfile. Edit it by hand.");
+
+it('lists outdated formulae and casks, without a pinned formula', function () {
+    $this->shell->expect([$this->brew, 'outdated', '--json=v2'], json_encode([
+        'formulae' => [
+            ['name' => 'jq', 'installed_versions' => ['1.6', '1.7'], 'current_version' => '1.8.1', 'pinned' => false, 'pinned_version' => null],
+            ['name' => 'node', 'installed_versions' => ['22.1.0'], 'current_version' => '24.0.0', 'pinned' => true, 'pinned_version' => '22.1.0'],
+        ],
+        'casks' => [['name' => 'ghostty', 'installed_versions' => ['1.1.0'], 'current_version' => '1.2.0']],
+    ]));
+
+    $outdated = array_map(fn (array $entry) => [$entry['package']->key(), $entry['package']->version, $entry['latest']], $this->homebrew->outdated());
+
+    expect($outdated)->toBe([['formula:jq', '1.7', '1.8.1'], ['cask:ghostty', '1.1.0', '1.2.0']])
+        ->and($this->shell->environmentOf([$this->brew, 'outdated', '--json=v2']))->toBe(Homebrew::ENVIRONMENT);
+});
+
+it('throws when brew outdated fails', function () {
+    $this->shell->expect([$this->brew, 'outdated', '--json=v2'], exitCode: 1, errorOutput: "Error: no network\n");
+
+    $this->homebrew->outdated();
+})->throws(RuntimeException::class, 'brew outdated failed: Error: no network');

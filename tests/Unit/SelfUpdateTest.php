@@ -1,0 +1,66 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Support\ProcessShell;
+use App\Support\SelfUpdate;
+
+/*
+ * Updates a stand-in binary from a release folder on disk instead of GitHub.
+ */
+
+beforeEach(function () {
+    $this->dir = realpath(sys_get_temp_dir()).'/dotsnitch-update-'.bin2hex(random_bytes(4));
+    $this->binary = "{$this->dir}/bin/dotsnitch";
+    mkdir("{$this->dir}/bin", 0755, true);
+    mkdir("{$this->dir}/release");
+    file_put_contents($this->binary, 'old');
+
+    foreach (['dotsnitch-arm64', 'dotsnitch-x86_64'] as $asset) {
+        file_put_contents("{$this->dir}/release/{$asset}", 'new');
+    }
+
+    exec('cd '.escapeshellarg("{$this->dir}/release").' && shasum -a 256 dotsnitch-arm64 dotsnitch-x86_64 > checksums.txt');
+    $this->update = new SelfUpdate(new ProcessShell, "file://{$this->dir}/release");
+});
+
+afterEach(function () {
+    exec('rm -rf '.escapeshellarg($this->dir));
+});
+
+it('replaces the binary with the release build and makes it executable', function () {
+    expect($this->update->update($this->binary))->toBeTrue()
+        ->and(file_get_contents($this->binary))->toBe('new')
+        ->and(is_executable($this->binary))->toBeTrue()
+        ->and(file_exists("{$this->dir}/bin/.dotsnitch.new"))->toBeFalse();
+});
+
+it('downloads nothing when the binary already is the release', function () {
+    file_put_contents($this->binary, 'new');
+    unlink("{$this->dir}/release/dotsnitch-arm64");
+    unlink("{$this->dir}/release/dotsnitch-x86_64");
+
+    expect($this->update->update($this->binary))->toBeFalse();
+});
+
+it('keeps the old binary when the download doesn\'t match its checksum', function () {
+    file_put_contents("{$this->dir}/release/dotsnitch-arm64", 'tampered');
+    file_put_contents("{$this->dir}/release/dotsnitch-x86_64", 'tampered');
+
+    expect(fn () => $this->update->update($this->binary))->toThrow(RuntimeException::class, "doesn't match its checksum")
+        ->and(file_get_contents($this->binary))->toBe('old')
+        ->and(file_exists("{$this->dir}/bin/.dotsnitch.new"))->toBeFalse();
+});
+
+it('keeps the old binary when the release can\'t be reached', function () {
+    $update = new SelfUpdate(new ProcessShell, "file://{$this->dir}/nowhere");
+
+    expect(fn () => $update->update($this->binary))->toThrow(RuntimeException::class, 'The download failed: ')
+        ->and(file_get_contents($this->binary))->toBe('old');
+});
+
+it('throws when the release lists no checksum for this Mac', function () {
+    file_put_contents("{$this->dir}/release/checksums.txt", "abc  something-else\n");
+
+    expect(fn () => $this->update->update($this->binary))->toThrow(RuntimeException::class, 'The release has no checksum for dotsnitch-');
+});

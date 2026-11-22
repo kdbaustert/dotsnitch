@@ -95,6 +95,11 @@ final class Uv extends PackageManagerTarget
         return [$this->binary('uv'), 'tool', 'install', $this->spec->argument($package)];
     }
 
+    protected function pinAllows(string $pin, string $version): bool
+    {
+        return PythonSpec::allows($pin, $version);
+    }
+
     /**
      * By name only.
      */

@@ -100,6 +100,19 @@ final class Pipx extends PackageManagerTarget
         return [$this->binary('pipx'), 'install', $this->spec->argument($package)];
     }
 
+    protected function pinAllows(string $pin, string $version): bool
+    {
+        return PythonSpec::allows($pin, $version);
+    }
+
+    /**
+     * pipx leaves an installed package alone without --force.
+     */
+    protected function reinstallCommands(Package $package): array
+    {
+        return [[$this->binary('pipx'), 'install', '--force', $this->spec->argument($package)]];
+    }
+
     /**
      * pipx removes by venv name, which differs from the package when it was installed with --suffix.
      */

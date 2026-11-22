@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Targets;
 
 use App\Contracts\ManifestFormat;
+use App\Contracts\SharesManifest;
 use App\Data\Package;
+use App\Manifests\BrewfileLineFormat;
 use App\Manifests\MasSpec;
 use App\Sync\DriftItem;
 use App\Sync\DriftKind;
@@ -17,7 +19,7 @@ use RuntimeException;
  * Mac App Store apps, by id. Ids don't say much in a report, so each item shows the app's name
  * from the manifest or from mas list.
  */
-final class Mas extends PackageManagerTarget
+final class Mas extends PackageManagerTarget implements SharesManifest
 {
     /** mas list's text form: id, name, then the version in parens. */
     private const LIST_LINE = '/^\s*(\d+)\s+(.+?)\s+\((.+)\)\s*$/';
@@ -50,11 +52,17 @@ final class Mas extends PackageManagerTarget
     }
 
     /**
-     * mas.sh is a setup script whose bash array holds "id:Name" entries.
+     * mas.sh is a setup script whose bash array holds "id:Name" entries. A Brewfile counts for
+     * its mas lines.
      */
     public function manifestPatterns(): array
     {
-        return ['mas.txt', 'Masfile', 'mas.sh'];
+        return ['mas.txt', 'Masfile', 'mas.sh', 'Brewfile', '.Brewfile'];
+    }
+
+    public function hasEntriesIn(string $path): bool
+    {
+        return ! BrewfileLineFormat::isBrewfile($path) || $this->format($path)->read($path)->isNotEmpty();
     }
 
     /**
@@ -65,7 +73,8 @@ final class Mas extends PackageManagerTarget
         $this->titles = [];
 
         foreach ($manifests as $manifest) {
-            $this->titles += is_file($manifest) ? MasSpec::titlesIn((string) file_get_contents($manifest)) : [];
+            $contents = is_file($manifest) ? (string) file_get_contents($manifest) : '';
+            $this->titles += BrewfileLineFormat::isBrewfile($manifest) ? BrewfileLineFormat::appTitles($contents) : MasSpec::titlesIn($contents);
         }
 
         return parent::scan($manifests, $log);
@@ -76,7 +85,9 @@ final class Mas extends PackageManagerTarget
      */
     protected function format(string $manifest): ManifestFormat
     {
-        return $this->scriptOrList($manifest, new MasSpec($this->titles));
+        return BrewfileLineFormat::isBrewfile($manifest)
+            ? new BrewfileLineFormat('app', $this->titles)
+            : $this->scriptOrList($manifest, new MasSpec($this->titles));
     }
 
     /**

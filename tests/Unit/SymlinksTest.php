@@ -287,6 +287,30 @@ it('repoints a link and leaves the old destination alone', function () {
         ]);
 });
 
+it('moves the old destination into backups after a repoint when asked to', function () {
+    putFile("{$this->root}/.vimrc");
+    putFile("{$this->dir}/old/.vimrc", 'old');
+    symlink("{$this->dir}/old/.vimrc", "{$this->home}/.vimrc");
+    $item = new DriftItem('symlinks', DriftKind::WrongTarget, new Link("{$this->root}/.vimrc", "{$this->home}/.vimrc"));
+
+    expect(array_keys($this->symlinks->actionsFor($item)))->toBe(['repoint', 'repoint-backup', 'ignore', 'skip']);
+
+    $effects = runLinkAction(Action::RepointAndBackUp, $item);
+
+    expect(readlink("{$this->home}/.vimrc"))->toBe("{$this->root}/.vimrc")
+        ->and(file_exists("{$this->dir}/old/.vimrc"))->toBeFalse()
+        ->and(file_get_contents("{$this->dir}/backups{$this->dir}/old/.vimrc"))->toBe('old')
+        ->and($effects[1])->toBe(['kind' => 'move', 'from' => "{$this->dir}/old/.vimrc", 'to' => "{$this->dir}/backups{$this->dir}/old/.vimrc"]);
+});
+
+it('only repoints when the old destination is already gone', function () {
+    putFile("{$this->root}/.vimrc");
+    symlink('old/.vimrc', "{$this->home}/.vimrc");
+    $item = new DriftItem('symlinks', DriftKind::WrongTarget, new Link("{$this->root}/.vimrc", "{$this->home}/.vimrc"));
+
+    expect($this->symlinks->steps(new Decision($item, Action::RepointAndBackUp)))->toHaveCount(1);
+});
+
 it('removes a broken link', function () {
     symlink("{$this->root}/.oldrc", "{$this->home}/.oldrc");
 

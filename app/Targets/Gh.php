@@ -107,6 +107,22 @@ final class Gh extends PackageManagerTarget
     }
 
     /**
+     * A pin is one tag or commit, and gh lists a commit by its first 8 characters.
+     */
+    protected function pinAllows(string $pin, string $version): bool
+    {
+        return $pin === $version || (strlen($version) === 8 && str_starts_with($pin, $version));
+    }
+
+    /**
+     * gh won't install over an extension that's there, so the old one goes first.
+     */
+    protected function reinstallCommands(Package $package): array
+    {
+        return [$this->uninstallCommand($package), $this->installCommand($package)];
+    }
+
+    /**
      * gh strips owner/ and gh- itself, so the full name works.
      */
     protected function uninstallCommand(Package $package): array

@@ -85,6 +85,17 @@ final class SyncLog
     }
 
     /**
+     * @return list<string> paths of the saved logs, newest first
+     */
+    public function saved(): array
+    {
+        $files = glob($this->directory.'/'.self::DIRECTORY.'/*.json') ?: [];
+        rsort($files);
+
+        return $files;
+    }
+
+    /**
      * @param  array<string, mixed>  $outcome  the effect or the failure
      */
     private function add(Decision $decision, Step $step, array $outcome): void

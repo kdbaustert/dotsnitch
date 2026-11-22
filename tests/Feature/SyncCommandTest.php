@@ -121,13 +121,13 @@ it('rejects an unknown check in --checks', function () {
     $this->app->instance(Homebrew::class, fakeTarget('brew', fails: false));
 
     $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'brew,nope']);
-})->throws(InvalidArgumentException::class, 'Unknown check "nope" in --checks. Checks: brew, mas, composer, npm, pnpm, gh, pipx, uv, cargo, symlinks.');
+})->throws(InvalidArgumentException::class, 'Unknown check "nope" in --checks. Checks: brew, mas, composer, npm, pnpm, gh, pipx, uv, cargo, vscode, symlinks.');
 
 it('rejects --checks with no check in it', function () {
     $this->app->instance(Homebrew::class, fakeTarget('brew', fails: false));
 
     $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => ',']);
-})->throws(InvalidArgumentException::class, '--checks needs at least one check. Checks: brew, mas, composer, npm, pnpm, gh, pipx, uv, cargo, symlinks.');
+})->throws(InvalidArgumentException::class, '--checks needs at least one check. Checks: brew, mas, composer, npm, pnpm, gh, pipx, uv, cargo, vscode, symlinks.');
 
 it("rejects a check in --checks whose tool isn't installed", function () {
     $this->app->instance(Homebrew::class, fakeTarget('brew', fails: false, available: false));
@@ -436,4 +436,38 @@ it('uses the first Homebrew without a terminal and saves nothing', function () {
         ->assertExitCode(1);
 
     expect($settings->get('homebrew'))->toBeNull();
+});
+
+it('installs what is missing with --install-missing, asks nothing and leaves the rest', function () {
+    $other = onlyOtherCheck();
+    $other->kinds = [DriftKind::Missing, DriftKind::Untracked];
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other', '--install-missing' => true, '--no-interaction' => true])
+        ->expectsOutputToContain('These will run, in order:')
+        ->expectsOutputToContain('brew install --formula jq')
+        ->expectsOutputToContain('Applied 1 change.')
+        ->assertExitCode(0);
+
+    expect($other->ran)->toBe(['install jq'])
+        ->and(file_get_contents("{$this->dir}/repo/Brewfile"))->toBe('')
+        ->and(syncLog()['steps'][0]['effect']['command'])->toBe(['brew', 'install', '--formula', 'jq']);
+});
+
+it('only lists the installs for --install-missing on a dry run', function () {
+    $other = onlyOtherCheck();
+    $other->kinds = [DriftKind::Missing];
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other', '--install-missing' => true, '--dry-run' => true, '--no-interaction' => true])
+        ->expectsOutputToContain('Dry run. These would run, in order:')
+        ->assertExitCode(0);
+
+    expect($other->ran)->toBe([]);
+});
+
+it('says so when --install-missing finds nothing missing', function () {
+    onlyOtherCheck();
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other', '--install-missing' => true, '--no-interaction' => true])
+        ->expectsOutputToContain('Nothing to install.')
+        ->assertExitCode(0);
 });

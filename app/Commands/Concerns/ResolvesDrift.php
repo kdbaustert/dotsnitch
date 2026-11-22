@@ -17,6 +17,7 @@ use App\Sync\Action;
 use App\Sync\Change;
 use App\Sync\Decision;
 use App\Sync\DriftItem;
+use App\Sync\DriftKind;
 use App\Sync\DriftReport;
 use App\Sync\IgnoreList;
 use App\Sync\ResolutionMode;
@@ -102,6 +103,41 @@ trait ResolvesDrift
         if ($applied !== []) {
             $this->saveRescan($reports, $applied);
             $this->offerCommit($applied);
+        }
+
+        return $this->failureReport();
+    }
+
+    /**
+     * Installs every listed package this Mac lacks, with nothing to answer, so one command sets
+     * up a new Mac. Everything else is left for a plain sync. --dry-run stops after the commands.
+     *
+     * @param  array<string, DriftReport|RuntimeException>  $reports  keyed by check
+     * @return int failure when an install couldn't be planned or run
+     */
+    private function installMissing(array $reports): int
+    {
+        $missing = array_filter($this->itemsOf($reports), fn (DriftItem $item) => $item->kind === DriftKind::Missing
+            && isset($this->actionsFor($item)[Action::Install->value]));
+        $changes = $this->planned(array_map(fn (DriftItem $item) => new Decision($item, Action::Install), array_values($missing)));
+
+        if ($changes === []) {
+            $this->info('Nothing to install.');
+
+            return $this->failureReport();
+        }
+
+        $this->showSteps($changes);
+
+        if ($this->option('dry-run')) {
+            return $this->failureReport();
+        }
+
+        $applied = $this->apply($changes);
+        $this->showApplied(count($applied), count($changes));
+
+        if ($applied !== []) {
+            $this->saveRescan($reports, $applied);
         }
 
         return $this->failureReport();

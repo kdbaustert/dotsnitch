@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Targets;
 
+use App\Contracts\ListsOutdated;
 use App\Contracts\ManifestFormat;
 use App\Contracts\Shell;
 use App\Data\Package;
@@ -18,7 +19,7 @@ use RuntimeException;
 /**
  * Global npm packages, top level only.
  */
-final class Npm extends PackageManagerTarget
+final class Npm extends PackageManagerTarget implements ListsOutdated
 {
     private readonly NodeSpec $spec;
 
@@ -83,6 +84,20 @@ final class Npm extends PackageManagerTarget
         return collect($tree['dependencies'] ?? [])
             ->map(fn (array $package, string $name) => new Package($name, 'package', $package['version'] ?? null))
             ->values();
+    }
+
+    /**
+     * @throws RuntimeException when npm prints no JSON
+     */
+    public function outdated(): array
+    {
+        $listed = $this->json([$this->binary('npm'), 'outdated', '-g', '--json']);
+
+        return array_values(array_map(
+            fn (array $entry, string $name) => ['package' => new Package($name, 'package', $entry['current'] ?? null), 'latest' => $entry['latest']],
+            $listed,
+            array_keys($listed),
+        ));
     }
 
     /**

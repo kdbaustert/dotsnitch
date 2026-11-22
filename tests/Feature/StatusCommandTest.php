@@ -9,6 +9,7 @@ use App\Support\StatusLock;
 use App\Sync\ReportStore;
 use App\Targets\Homebrew;
 use App\Targets\Symlinks;
+use Illuminate\Support\Facades\Artisan;
 use Tests\Fakes\FakeShell;
 
 beforeEach(function () {
@@ -168,4 +169,30 @@ it('skips the scan while another status holds the lock', function () {
         ->assertExitCode(0);
 
     expect(app(ReportStore::class)->latest())->toBeNull();
+});
+
+it('prints the scan as JSON and nothing else with --json', function () {
+    previousScan($this->dir, []);
+
+    $exit = Artisan::call('status', ['--repo' => "{$this->dir}/repo", '--json' => true]);
+    $scan = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exit)->toBe(0)
+        ->and($scan['repo'])->toBe(realpath("{$this->dir}/repo"))
+        ->and($scan['checks'])->toBe(['other' => [
+            'label' => 'Other',
+            'error' => null,
+            'ignored' => 0,
+            'items' => [['kind' => 'untracked', 'item' => 'formula:jq', 'detail' => null, 'new' => true]],
+        ]]);
+});
+
+it('puts a failed check\'s error in the JSON and exits with failure', function () {
+    $this->app->instance(Homebrew::class, fakeTarget('brew', fails: true));
+
+    $exit = Artisan::call('status', ['--repo' => "{$this->dir}/repo", '--checks' => 'brew', '--json' => true]);
+    $scan = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exit)->toBe(1)
+        ->and($scan['checks']['brew'])->toBe(['label' => 'Brew', 'error' => 'brew info failed: boom', 'ignored' => 0, 'items' => []]);
 });

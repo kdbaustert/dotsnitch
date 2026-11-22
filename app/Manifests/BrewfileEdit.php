@@ -7,17 +7,30 @@ namespace App\Manifests;
 use App\Data\Package;
 
 /**
- * Line edits on a Brewfile. Only plain `tap`, `brew` and `cask` lines are matched, with either
- * quote style and any options or comment after the name. Anything built in Ruby is left to the
- * user.
+ * Line edits on a Brewfile. Only plain `tap`, `brew`, `cask`, `mas` and `vscode` lines are
+ * matched, with either quote style and any options or comment after the name. Anything built in
+ * Ruby is left to the user.
+ *
+ * An app's Package name is its App Store id, so a mas line is matched by its id and never by the
+ * name in quotes.
  */
 final class BrewfileEdit extends LineBasedEdit
 {
     /** Package type to its Brewfile directive, in the order the sections usually run. */
-    private const DIRECTIVES = ['tap' => 'tap', 'formula' => 'brew', 'cask' => 'cask'];
+    private const DIRECTIVES = ['tap' => 'tap', 'formula' => 'brew', 'cask' => 'cask', 'app' => 'mas', 'extension' => 'vscode'];
 
     /** A top-level line of any Brewfile directive, such as `mas "Xcode", id: 497799835`. */
     private const ANY_DIRECTIVE = '/^([a-z_]+)\s+["\']/';
+
+    /**
+     * @param  array<string, string>  $titles  app name by id, for a new mas line
+     */
+    public function __construct(
+        string $contents,
+        private readonly array $titles = [],
+    ) {
+        parent::__construct($contents);
+    }
 
     /**
      * Goes after the last entry of the same type, or of the closest section before it. With no
@@ -29,12 +42,16 @@ final class BrewfileEdit extends LineBasedEdit
             return;
         }
 
-        $line = self::DIRECTIVES[$package->type].' "'.$package->name.'"';
+        // brew bundle installs by the id, so the id stands in for a name nobody knows.
+        $line = $package->type === 'app'
+            ? 'mas "'.addcslashes($this->titles[$package->name] ?? $package->name, '"\\#').'", id: '.$package->name
+            : self::DIRECTIVES[$package->type].' "'.$package->name.'"';
         array_splice($this->lines, $this->insertionPoint($package->type), 0, [$line]);
     }
 
     /**
-     * Keeps the old line's indent, options and comment.
+     * Keeps the old line's indent, options and comment. Not for a mas line, whose id is one of
+     * those options.
      */
     public function replace(Package $old, Package $new): bool
     {
@@ -64,12 +81,16 @@ final class BrewfileEdit extends LineBasedEdit
     }
 
     /**
-     * Captures the indent, the space after the directive, and the quote. Tap names are
-     * case-insensitive, so the match is too.
+     * Captures the indent, the space after the directive, and the quote. Tap names and extension
+     * ids are case-insensitive, so the match is too.
      */
     private function patternFor(Package $package): string
     {
-        $flags = $package->type === 'tap' ? 'i' : '';
+        if ($package->type === 'app') {
+            return '/^(\s*)mas(\s+)(["\']).*?\3\s*,\s*id:\s*'.preg_quote($package->name, '/').'\b/';
+        }
+
+        $flags = in_array($package->type, ['tap', 'extension'], true) ? 'i' : '';
 
         return '/^(\s*)'.self::DIRECTIVES[$package->type].'(\s+)(["\'])'.preg_quote($package->name, '/').'\3/'.$flags;
     }

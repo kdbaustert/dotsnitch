@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Contracts\ScansWholeRepo;
+use App\Contracts\SharesManifest;
 use App\Contracts\Shell;
 use App\Support\DotfilesRepo;
 use App\Support\LaunchAgent;
@@ -14,11 +15,13 @@ use App\Support\ManifestEditor;
 use App\Support\Manifests;
 use App\Support\PathResolver;
 use App\Support\ProcessShell;
+use App\Support\SelfUpdate;
 use App\Support\StatusLock;
 use App\Support\UserSettings;
 use App\Sync\ReportStore;
 use App\Sync\SyncLog;
 use App\Targets\Symlinks;
+use Closure;
 use Illuminate\Support\ServiceProvider;
 use RuntimeException;
 
@@ -56,6 +59,8 @@ final class AppServiceProvider extends ServiceProvider
 
         $this->app->singleton(ReportStore::class, fn () => new ReportStore(ReportStore::defaultDirectory(getenv())));
         $this->app->singleton(SyncLog::class, fn () => new SyncLog(ReportStore::defaultDirectory(getenv())));
+        // DOTSNITCH_RELEASES points self-update at another release folder, like it does scripts/install.sh.
+        $this->app->when(SelfUpdate::class)->needs('$releases')->give(fn () => getenv('DOTSNITCH_RELEASES') ?: SelfUpdate::RELEASES);
         $this->app->singleton(StatusLock::class, fn () => new StatusLock(ReportStore::defaultDirectory(getenv()).'/'.StatusLock::FILE));
         // launchctl and plutil are system tools, so the login environment isn't needed.
         $this->app->singleton(LaunchAgent::class, fn () => new LaunchAgent(
@@ -75,7 +80,7 @@ final class AppServiceProvider extends ServiceProvider
     /**
      * A check that reads the whole repo uses every file its patterns match.
      *
-     * @return array<string, array{label: string, patterns: list<string>, many: bool}> keyed by target key
+     * @return array<string, array{label: string, patterns: list<string>, many: bool, holds: ?Closure(string): bool}> keyed by target key
      */
     private function targetChecks(): array
     {
@@ -86,6 +91,7 @@ final class AppServiceProvider extends ServiceProvider
                 'label' => $target->label(),
                 'patterns' => $target->manifestPatterns(),
                 'many' => $target instanceof ScansWholeRepo,
+                'holds' => $target instanceof SharesManifest ? $target->hasEntriesIn(...) : null,
             ];
         }
 

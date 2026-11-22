@@ -127,4 +127,25 @@ it('gives back the same text after adding an entry and removing it again', funct
     'tap' => [new Package('acme/tools', 'tap')],
     'formula' => [new Package('wget', 'formula')],
     'cask' => [new Package('iterm2', 'cask')],
+    'app' => [new Package('409222199', 'app')],
+    'extension' => [new Package('editorconfig.editorconfig', 'extension')],
 ]);
+
+it('writes a mas line with the name it was given, and finds one by its id', function () {
+    $edit = new BrewfileEdit(SAMPLE_BREWFILE, ['409222199' => 'Cyberduck', '1' => 'Say "hi" #1']);
+    $edit->add(new Package('409222199', 'app'));
+    $edit->add(new Package('1', 'app'));
+    $edit->add(new Package('497799835', 'app'));
+
+    expect($edit->contents())->toEndWith("mas \"Xcode\", id: 497799835\nmas \"Cyberduck\", id: 409222199\nmas \"Say \\\"hi\\\" \\#1\", id: 1\n")
+        ->and($edit->lists(new Package('4977998', 'app')))->toBeFalse()
+        ->and($edit->remove(new Package('497799835', 'app')))->toBeTrue();
+});
+
+it('puts a first vscode line after everything else', function () {
+    $edit = new BrewfileEdit("brew \"jq\"\nmas \"Xcode\", id: 497799835\n");
+    $edit->add(new Package('editorconfig.editorconfig', 'extension'));
+
+    expect($edit->contents())->toBe("brew \"jq\"\nmas \"Xcode\", id: 497799835\nvscode \"editorconfig.editorconfig\"\n")
+        ->and($edit->lists(new Package('EditorConfig.EditorConfig', 'extension')))->toBeTrue();
+});

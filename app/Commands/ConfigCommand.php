@@ -22,7 +22,7 @@ final class ConfigCommand extends Command
     use ChoosesHomebrew;
 
     /** Binaries the checks will need, in the order config/targets.php lists the checks. */
-    private const BINARIES = ['brew', 'mas', 'composer', 'npm', 'pnpm', 'gh', 'pipx', 'uv', 'cargo', 'node', 'php'];
+    private const BINARIES = ['brew', 'mas', 'composer', 'npm', 'pnpm', 'gh', 'pipx', 'uv', 'cargo', 'code', 'node', 'php'];
 
     protected $signature = 'config
         {--machine : Print what dotsnitch detected about this Mac}

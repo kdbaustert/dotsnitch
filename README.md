@@ -21,12 +21,15 @@ curl -fsSL "$beta/install.sh" | DOTSNITCH_RELEASES="$beta" sh
 ## What it does
 
 - compares your Brewfile with what Homebrew has installed
-- compares your global Composer, npm and pnpm packages, Mac App Store apps, GitHub CLI extensions, pipx apps, uv tools and Cargo crates with their lists
+- compares your global Composer, npm and pnpm packages, Mac App Store apps, VS Code extensions, GitHub CLI extensions, pipx apps, uv tools and Cargo crates with their lists
+- flags a package that's installed at a version its pin doesn't allow
 - checks that the config files in your dotfiles are symlinked into place
-- fixes what it found, one item at a time or a whole group at once
+- fixes what it found, one item at a time or a whole group at once, and undoes the file and link changes if you want them back
+- installs everything that's missing on a new Mac with one command
 - ignores things on one Mac without touching your dotfiles
 - marks what's new since the last scan, runs every day and notifies you
-- shows the count in your shell prompt
+- shows the count in your shell prompt, and prints a scan as JSON for scripts
+- lists the packages that have a newer version
 
 ## Install
 
@@ -34,7 +37,7 @@ curl -fsSL "$beta/install.sh" | DOTSNITCH_RELEASES="$beta" sh
 curl -fsSL https://github.com/kdbaustert/dotsnitch/releases/latest/download/install.sh | sh
 ```
 
-That puts `dotsnitch` in `~/.local/bin`. The script only uses tools that come with macOS. It grabs the Apple Silicon or Intel build (Apple Silicon even from a Rosetta shell) and checks it against the release's `checksums.txt` before installing. If `~/.local/bin` isn't on your PATH, it tells you what to add to `~/.zprofile`. Run it again whenever you want to upgrade.
+That puts `dotsnitch` in `~/.local/bin`. The script only uses tools that come with macOS. It grabs the Apple Silicon or Intel build (Apple Silicon even from a Rosetta shell) and checks it against the release's `checksums.txt` before installing. If `~/.local/bin` isn't on your PATH, it tells you what to add to `~/.zprofile`. To upgrade later, run `dotsnitch self-update`.
 
 To put it somewhere else, swap the last `sh` for `sh -s -- --prefix=/usr/local/bin`.
 
@@ -45,6 +48,22 @@ brew install kdbaustert/tap/dotsnitch
 ```
 
 `dotsnitch --version` shows which release you have, like `Dotsnitch v0.1.0`.
+
+### Upgrading
+
+```sh
+dotsnitch self-update
+```
+
+That downloads the latest release's build for this Mac, checks it against `checksums.txt` and swaps it in for the binary you ran. When you already have the latest, it says so and downloads nothing. A copy Homebrew installed is left to `brew upgrade dotsnitch`, and a source checkout has nothing to replace. I haven't run it against a real release yet, because there isn't a full one. It's tested against a release folder on disk.
+
+### Tab completion
+
+```sh
+dotsnitch completion zsh > ~/.zfunc/_dotsnitch
+```
+
+Put that folder on your `fpath` before `compinit` runs. `dotsnitch completion bash` and `dotsnitch completion fish` print the scripts for those shells.
 
 If you download the binary in a browser instead of with curl, macOS quarantines it. Clear that before the first run:
 
@@ -91,7 +110,8 @@ You get a live status for each check while it scans. Then there's a summary row 
 | Check | Manifest it looks for |
 | --- | --- |
 | Homebrew | `Brewfile`, `.Brewfile` |
-| Mac App Store | `mas.txt`, `Masfile`, `mas.sh` |
+| Mac App Store | `mas.txt`, `Masfile`, `mas.sh`, or the `mas` lines of a `Brewfile` |
+| VS Code extensions | `vscode-extensions.txt`, or the `vscode` lines of a `Brewfile` |
 | Composer (global) | `composer/composer.json`, `.composer/composer.json`, `composer-global.json`, `Composerfile` |
 | npm (global) | `npm-global.txt`, `.npm-globals`, `npm/package.json` |
 | pnpm (global) | `pnpm-global.txt`, `.pnpm-globals`, `pnpm.sh` |
@@ -119,16 +139,17 @@ A manifest with your hostname on the end, like `Brewfile.kennys-macbook-pro`, is
 
 ### Notes per check
 
-- **Homebrew:** dependencies don't count as untracked, and an alias or old name in your Brewfile matches the formula it points to. A name Homebrew doesn't know shows as not installed, with a note saying so. `mas` lines in a Brewfile aren't read yet.
+- **Homebrew:** dependencies don't count as untracked, and an alias or old name in your Brewfile matches the formula it points to. A name Homebrew doesn't know shows as not installed, with a note saying so. Its `mas` and `vscode` lines belong to the Mac App Store and VS Code checks, which read and edit them there.
 - **Composer** only looks at direct requires (`composer global show --direct`), so dependencies never show up as untracked. That's true when your manifest is Composer's own `composer.json` linked in from your dotfiles, too.
 - **npm** never reports the npm that's running the check, wherever it's installed.
 - **pnpm** installs one package per `pnpm add -g`. pnpm 11 keeps the packages from each `add -g` call together in a group, so an untracked package in a shared group tells you which packages it shares it with. If pnpm's global bin dir isn't on your login PATH, the scan tells you to run `pnpm setup`.
 - **Mac App Store** goes by app id. An entry can be `497799835` or `497799835:Xcode`, and the report shows the name. New entries get the name too, in double quotes when it has a space or an apostrophe (`"1436522307:Transmit 5"`), so quote those yourself in a plain list. A name with a `"`, `$`, backtick, backslash or `#` in it is left off, and the entry is just the id. It reads the text from `mas list`, because mas 7's `--json` leaves out some apps' ids. Uninstalling runs `sudo mas uninstall`, so expect a password prompt.
+- **VS Code extensions** are `publisher.name` ids from `code --list-extensions`, matched whatever their case. `publisher.name@1.2.3` pins a version. A Brewfile only counts as this check's manifest once it has a `vscode` line, and the same goes for `mas` lines and the Mac App Store check.
 - **GitHub CLI extensions** are `owner/repo`, and `owner/repo@v1.2.0` installs with `--pin v1.2.0`. A local extension shows up by its `gh-name` and can't be installed from here.
 - **pipx** and **uv** match names the way pip does, so `Poetry_Core`, `poetry.core` and `poetry-core` are the same package. Extras and specifiers like `httpie[socks]>=3` are kept when installing. `ruff >= 0.6` with spaces reads the same, but dotsnitch only edits that line when the entry is in quotes. pipx only counts each app's main package, not whatever you injected into it, and uninstalls by venv name so a `--suffix` install works.
 - **Cargo** reads `cargo install --list`, crates from git included. `ripgrep@14.1.1` installs that version.
 
-A pin like `typescript@6` or `laravel/installer:^5` matches whatever version is installed, and Install keeps the pin. Version mismatches aren't flagged yet.
+A package that's installed at a version its pin doesn't allow is reported as "pinned to 6", and Install puts the pinned version in. `typescript@6` allows any 6.x, `ripgrep@14.1.1` allows only that, and `laravel/installer:^5` allows 5.0 up to 6. pipx and uv read pip's specifiers (`>=3`, `==2.*`), and a GitHub CLI extension has to be on the exact tag or commit. A pin dotsnitch can't read, like a wider range, matches whatever is installed.
 
 I haven't run the pipx, uv and Cargo checks on a Mac that has them installed. They're written from those tools' source code and tested against fixtures.
 
@@ -147,10 +168,10 @@ Each path that's off comes back as one of these:
 
 - **not linked:** create the link
 - **conflict:** a real file is in the way. Back it up and link, show the diff, or adopt your copy into the repo.
-- **wrong target:** repoint the link
+- **wrong target:** repoint the link, or repoint it and move what it pointed at into the backup folder
 - **broken:** the repo file is gone, so remove the link
 
-Anything moved out of the way goes in this run's backup folder under `~/.cache/dotsnitch/backups`. For now, repointing leaves the old destination where it is.
+Anything moved out of the way goes in this run's backup folder under `~/.cache/dotsnitch/backups`. A plain repoint leaves the old destination where it is.
 
 ## Fixing what it found
 
@@ -165,6 +186,23 @@ For each item you can add it to your dotfiles, install it, uninstall it, swap a 
 You always see the whole plan before anything runs. Uninstalls get their own yes or no, and it defaults to no.
 
 When it's done it scans again and saves the new report. If it edited files in a git checkout, it shows `git diff --stat` and offers to commit them. That defaults to no as well.
+
+### Undoing a sync
+
+```sh
+dotsnitch undo            # the last sync that changed anything
+dotsnitch undo --dry-run  # list what it would put back
+```
+
+`undo` puts back the manifest edits, links and moved files from a sync, last change first, after showing you the list and asking. To undo an older one, pass the file that sync said it recorded its changes in. It can't take back a package install or uninstall, or a commit, so it lists those and leaves them.
+
+### Setting up a new Mac
+
+```sh
+dotsnitch sync --install-missing
+```
+
+That installs every listed package that isn't installed, without asking anything, and leaves all other drift for a plain `sync`. It prints the commands before it runs them, and with `--dry-run` it stops there. It works with `--no-interaction` too, so it can go in a bootstrap script.
 
 ## Ignoring things on one Mac
 
@@ -187,7 +225,7 @@ With `--no-interaction`, or with nothing attached to stdin, dotsnitch never stop
 - two Homebrews: it uses `/opt/homebrew`
 - no dotfiles directory found: it stops and tells you to pass `--repo=` or set `DOTSNITCH_REPO`
 
-It never fixes anything this way. It reports, and exits with 1 if it found drift.
+It never fixes anything this way. It reports, and exits with 1 if it found drift. The exception is `sync --install-missing`, which you asked to install things.
 
 ## Daily use
 
@@ -199,6 +237,30 @@ dotsnitch status --new    # only what the last scan didn't have
 ```
 
 Every scan gets saved, by `sync` too, and the next one marks what's new. The line above the list reads like "9 out of sync, 2 new since Nov 20, 09:00", or just "9 out of sync" when nothing is new, and new items say "untracked (new)". Something only counts as new if the last scan ran the same check, so turning on a check doesn't flag everything in it. A check that fails keeps what the last scan found, so the count doesn't drop and the next good scan still has something to compare with.
+
+### In a script
+
+```sh
+dotsnitch status --json | jq '.checks.brew.items[] | select(.new) | .item'
+```
+
+`status --json` prints the scan as JSON and nothing else. Each check has its `label`, an `error` (null unless it couldn't finish), how many items are `ignored`, and its `items`, each with a `kind` such as `missing` or `untracked`, the `item` (like `formula:jq`), a `detail` and whether it's `new`. The exit code is the same as plain `status`.
+
+### Looking back
+
+```sh
+dotsnitch history
+```
+
+One row for each of the last 30 scans, newest first: when it ran, how many items were out of sync, how many were new, and the count per check.
+
+### What has a newer version
+
+```sh
+dotsnitch outdated
+```
+
+This asks Homebrew, npm and Composer which of your installed packages have a newer version and lists them with both versions. It leaves out a formula you've held back with `brew pin`. It only lists them, and none of it counts as out of sync, so the prompt count and the daily notification stay about your dotfiles. Nothing was outdated on my Mac when I wrote this, so all three are tested against sample output I wrote by hand, and I haven't seen a real outdated entry come through.
 
 ### Every day, with a notification
 
@@ -246,8 +308,8 @@ The outer parentheses make Starship drop the whole group when the command prints
 | --- | --- |
 | `~/.config/dotsnitch/config.json` | Your saved answers for this Mac: the dotfiles path, the Homebrew prefix, which manifests to read, and what's ignored |
 | `~/.local/state/dotsnitch/last-report.json` | The last scan's results and what was new in it (`$XDG_STATE_HOME` is used if set) |
-| `~/.local/state/dotsnitch/reports/` | The last 30 scans, one file each, for looking back |
-| `~/.local/state/dotsnitch/syncs/` | The last 30 syncs that changed anything, one file each: every step it ran, what that step changed, and the error from any step that failed. It's saved again after each step, so a sync that dies partway still leaves one |
+| `~/.local/state/dotsnitch/reports/` | The last 30 scans, one file each. `dotsnitch history` lists them |
+| `~/.local/state/dotsnitch/syncs/` | The last 30 syncs that changed anything, one file each: every step it ran, what that step changed, and the error from any step that failed. `dotsnitch undo` reads these. It's saved again after each step, so a sync that dies partway still leaves one |
 | `~/.local/state/dotsnitch/status.lock` | Keeps two `status` runs, or a `status` and a `sync`, from scanning at once. Its time marks the last background refresh |
 | `~/.local/state/dotsnitch/last-notified.json` | What the last `status --notify` saw, so the next one posts only what came after |
 | `~/.local/state/dotsnitch/schedule.log` | What the daily run printed. Past 1 MB it moves to `schedule.log.1`, replacing the older one |

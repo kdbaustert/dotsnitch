@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support;
 
 use App\Data\ManifestMatches;
+use Closure;
 
 use function Laravel\Prompts\multiselect;
 use function Laravel\Prompts\select;
@@ -17,7 +18,7 @@ use function Laravel\Prompts\warning;
 final class Manifests
 {
     /**
-     * @param  array<string, array{label: string, patterns: list<string>, many?: bool}>  $checks
+     * @param  array<string, array{label: string, patterns: list<string>, many?: bool, holds?: ?Closure(string): bool}>  $checks  "holds" takes an absolute path, and a file it turns down isn't that check's manifest
      * @param  bool  $unattended  take the defaults instead of asking, and save nothing
      */
     public function __construct(
@@ -55,6 +56,13 @@ final class Manifests
         $chosen = [];
 
         foreach ((new ManifestLocator($hostname))->locate($repo, $patterns) as $check => $matches) {
+            $holds = $this->checks[$check]['holds'] ?? null;
+
+            if ($holds !== null) {
+                $held = fn (array $files) => array_values(array_filter($files, fn (string $file) => $holds("{$repo}/{$file}")));
+                $matches = new ManifestMatches($held($matches->bases), $held($matches->hostOverlays), $held($matches->variants));
+            }
+
             $chosen[$check] = ($this->checks[$check]['many'] ?? false)
                 ? $matches->bases
                 : $this->chosenFor($check, $matches);

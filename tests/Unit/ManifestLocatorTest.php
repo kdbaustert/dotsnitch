@@ -49,6 +49,15 @@ afterEach(function () {
     exec('rm -rf '.escapeshellarg($this->dir));
 });
 
+it('leaves out a file the check says holds nothing for it', function () {
+    makeFiles($this->repo, ['Brewfile', 'Brewfile.kennys-mbp', 'mas.txt']);
+    $manifests = new Manifests($this->settings, [
+        'mas' => ['label' => 'Mac App Store', 'patterns' => ['mas.txt', 'Brewfile'], 'holds' => fn (string $path) => $path !== "{$this->repo}/Brewfile"],
+    ]);
+
+    expect($manifests->chosen($this->repo, 'kennys-mbp'))->toBe(['mas' => ['mas.txt', 'Brewfile.kennys-mbp']]);
+});
+
 it('sorts matches into bases, host overlays and variants', function () {
     makeFiles($this->repo, [
         'homebrew/Brewfile',

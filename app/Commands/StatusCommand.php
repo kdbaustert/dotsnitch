@@ -38,6 +38,7 @@ final class StatusCommand extends Command
         {--checks= : Checks to run, comma-separated (such as brew,npm); defaults to every one that\'s installed and has a manifest}
         {--new : List only what the last scan didn\'t have}
         {--notify : Post a macOS notification when anything is new}
+        {--json : Print the scan as JSON and nothing else}
         {--max-age=24h : With --quiet, how old the saved report can get before a refresh starts in the background}';
 
     protected $description = 'Scan without asking anything and show what is out of sync. With --quiet, print the saved count for a shell prompt';
@@ -55,9 +56,10 @@ final class StatusCommand extends Command
 
     /**
      * Scans, saves the report for the next run and shell prompts, prints it with where to go
-     * next, and with --notify posts what's new.
+     * next, and with --notify posts what's new. With --json the scan is all it prints.
      *
-     * @return int failure when a check couldn't finish, or --notify couldn't get the lock. Drift
+     * @return int failure when a check couldn't finish, or --notify or --json couldn't get the lock. Drift
+
      *             alone isn't a failure, so a schedule's log doesn't show every day as an error.
      *
      * @throws InvalidArgumentException when --checks names a check that doesn't exist or can't run
@@ -75,8 +77,14 @@ final class StatusCommand extends Command
         if (! $lock->acquire($notify ? self::NOTIFY_WAIT_SECONDS : 0)) {
             $this->line('Another dotsnitch status or sync is already running.');
 
-            // A daily run that waited and still couldn't scan shows as a failed run in launchd.
-            return $notify ? self::FAILURE : self::SUCCESS;
+            // A daily run that waited and still couldn't scan shows as a failed run in launchd,
+            // and a script reading --json gets no JSON.
+            return $notify || $this->option('json') ? self::FAILURE : self::SUCCESS;
+        }
+
+        // The spinner, the task lines and any warning go through the same output as the JSON.
+        if ($this->option('json')) {
+            $this->output->setVerbosity(OutputInterface::VERBOSITY_QUIET);
         }
 
         $checks = $this->allChecks();
@@ -86,9 +94,9 @@ final class StatusCommand extends Command
 
         $reports = $this->scanEach($selected);
         $saved = $this->saveScan($reports);
-        $result = $this->report($reports, $saved);
+        $result = $this->option('json') ? $this->printJson($reports, $saved) : $this->report($reports, $saved);
 
-        if ($this->itemsOf($reports) !== []) {
+        if ($this->itemsOf($reports) !== [] && ! $this->option('json')) {
             $this->newLine();
             $this->line('Go through them with dotsnitch sync.');
         }
@@ -98,6 +106,40 @@ final class StatusCommand extends Command
         }
 
         return $result;
+    }
+
+    /**
+     * A check that failed has its error and no items.
+     *
+     * @param  array<string, DriftReport|RuntimeException>  $reports
+     * @return int failure when any check couldn't finish
+     */
+    private function printJson(array $reports, SavedScan $saved): int
+    {
+        $checks = [];
+
+        foreach ($reports as $key => $report) {
+            $finished = $report instanceof DriftReport;
+            $checks[$key] = [
+                'label' => $this->checksByKey[$key]->target->label(),
+                'error' => $finished ? null : $report->getMessage(),
+                'ignored' => $finished ? $report->ignored : 0,
+                'items' => array_map(fn (DriftItem $item) => [
+                    'kind' => $item->kind->value,
+                    'item' => $item->subject->key(),
+                    'detail' => $item->detail,
+                    'new' => $saved->isNew($item),
+                ], $finished ? $report->items : []),
+            ];
+        }
+
+        $this->output->writeln(json_encode([
+            'scanned_at' => $saved->scannedAt->format(DATE_ATOM),
+            'repo' => $this->root,
+            'checks' => $checks,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), OutputInterface::OUTPUT_RAW | OutputInterface::VERBOSITY_QUIET);
+
+        return count($this->finished($reports)) < count($reports) ? self::FAILURE : self::SUCCESS;
     }
 
     /**

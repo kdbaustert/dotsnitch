@@ -18,6 +18,7 @@ enum Action: string
     case BackUpAndLink = 'backup-link';
     case Adopt = 'adopt';
     case Repoint = 'repoint';
+    case RepointAndBackUp = 'repoint-backup';
     case Unlink = 'unlink';
     case ShowDiff = 'diff';
     case Ignore = 'ignore';
@@ -39,6 +40,7 @@ enum Action: string
             self::BackUpAndLink => 'Back up and link',
             self::Adopt => 'Adopt into dotfiles',
             self::Repoint => 'Repoint link',
+            self::RepointAndBackUp => 'Repoint and back up what it pointed at',
             self::Unlink => 'Remove link',
             self::ShowDiff => 'Show diff',
             self::Ignore => 'Ignore on this Mac',

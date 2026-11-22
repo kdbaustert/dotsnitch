@@ -10,7 +10,7 @@ use RuntimeException;
 
 /**
  * Keeps the last scan in last-report.json for the next run and for shell prompts, plus the last
- * few in reports/ for debugging. It runs before Laravel boots too (see QuietStatus), so it
+ * few in reports/ for `dotsnitch history`. It runs before Laravel boots too (see QuietStatus), so it
  * can't use the container or helpers.
  */
 final class ReportStore
@@ -122,6 +122,34 @@ final class ReportStore
         } catch (RuntimeException) {
             return null;
         }
+    }
+
+    /**
+     * @return list<SavedScan> the scans still kept, newest first, without any that can't be read
+     */
+    public function history(): array
+    {
+        $files = glob($this->directory.'/'.self::HISTORY.'/*.json') ?: [];
+        rsort($files);
+        $scans = [];
+
+        foreach ($files as $file) {
+            try {
+                $data = JsonFile::read($file);
+            } catch (RuntimeException) {
+                continue;
+            }
+
+            if ($data !== null) {
+                try {
+                    $scans[] = SavedScan::fromArray($data);
+                } catch (RuntimeException) {
+                    continue;
+                }
+            }
+        }
+
+        return $scans;
     }
 
     /**
