@@ -673,6 +673,7 @@ trait ResolvesDrift
             Action::RemoveFromManifest->value => 'remove',
             Action::Replace->value => 'replace',
             Action::Adopt->value => 'adopt',
+            Action::UpdateManifest->value => 'update',
         ];
         $parts = [];
 

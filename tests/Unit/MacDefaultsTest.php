@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Data\DefaultsSnapshot;
+use App\Support\ManifestEditor;
 use App\Support\PathResolver;
 use App\Support\UserSettings;
 use App\Sync\Action;
@@ -30,13 +32,50 @@ beforeEach(function () {
     $settings->set('homebrew.prefix', "{$this->dir}/brew");
     $inherited = ['SHELL' => '/bin/zsh', 'HOME' => '/Users/sam', 'PATH' => "{$this->dir}/bin"];
     $login = (new FakeShell)->expect(['/bin/zsh', '+m', '-lic', 'printf __DOTSNITCH_ENV__; /usr/bin/env -0'], exitCode: 1);
-    $this->shell = new FakeShell;
-    $this->check = new MacDefaults($this->shell, new PathResolver($login, $settings, $inherited), $inherited);
+    // Every scan reads SYSTEM_DOMAINS too. A test that cares sets what it prints.
+    $this->shell = (new FakeShell)->expect([$this->defaults, 'read']);
+    $this->baseline = "{$this->dir}/state/defaults-baseline.json";
+    $this->check = new MacDefaults($this->shell, new PathResolver($login, $settings, $inherited), new ManifestEditor("{$this->dir}/backups"), $inherited, $this->baseline);
 });
 
 afterEach(function () {
     exec('rm -rf '.escapeshellarg($this->dir));
 });
+
+/**
+ * Runs every step of each decision in order.
+ *
+ * @param  list<Decision>  $decisions
+ * @return list<string> the step descriptions
+ */
+function runDefaultsSteps(object $test, array $decisions): array
+{
+    $descriptions = [];
+
+    foreach ($decisions as $decision) {
+        foreach ($test->check->steps($decision) as $step) {
+            $descriptions[] = $step->description;
+            ($step->run)();
+        }
+    }
+
+    return $descriptions;
+}
+
+/**
+ * Writes the script, then captures what changed between the two dumps.
+ *
+ * @param  list<string>  $lines
+ * @return list<DriftItem>
+ */
+function captureDefaults(object $test, array $lines, string $before, string $after): array
+{
+    file_put_contents($test->script, implode("\n", $lines)."\n");
+
+    return $test->check->capture(DefaultsSnapshot::parse($before), DefaultsSnapshot::parse($after), [$test->script], function (string $line) use ($test) {
+        $test->logged[] = $line;
+    })->items;
+}
 
 /**
  * Writes the script, then scans it.
@@ -87,7 +126,9 @@ it('reports a setting with another value, and one that is not set', function () 
         ->and($items[0]->subject->key())->toBe('com.apple.dock:tilesize')
         ->and($items[0]->detail)->toBe('is 64, macos.sh writes 48')
         ->and($items[1]->detail)->toBe("isn't set, macos.sh writes true")
-        ->and(array_keys($this->check->actionsFor($items[0])))->toBe(['write', 'ignore', 'skip']);
+        ->and(array_keys($this->check->actionsFor($items[0])))->toBe(['write', 'update', 'ignore', 'skip'])
+        ->and($this->check->actionsFor($items[0])['update'])->toBe('Change macos.sh to match')
+        ->and(array_keys($this->check->actionsFor($items[1])))->toBe(['write', 'ignore', 'skip']);
 });
 
 it('fills in $HOME, takes the quotes off, and lets the last line for a key win', function () {
@@ -142,7 +183,7 @@ it('passes over the lines it cannot compare, and says how many', function () {
     );
 
     expect($items)->toBe([])
-        ->and($this->shell->ran())->toBe([])
+        ->and($this->shell->ran())->toBe([[$this->defaults, 'read']])
         ->and($this->logged)->toBe(["7 defaults write lines in macos.sh can't be compared"]);
 });
 
@@ -179,4 +220,271 @@ it('fails the step when defaults write does', function () {
     [$write] = $this->check->steps(new Decision($items[0], Action::Write));
 
     expect(fn () => ($write->run)())->toThrow(RuntimeException::class, 'Could not write domain');
+});
+
+it('changes the line to the value this Mac has, and leaves the rest of it alone', function () {
+    $this->shell
+        ->expect([$this->defaults, 'read', 'com.apple.dock', 'tilesize'], "64\n")
+        ->expect([$this->defaults, 'read', 'com.apple.dock', 'autohide'], "0\n")
+        ->expect([$this->defaults, 'read', 'com.apple.screencapture', 'name'], "My Shot\n")
+        ->expect([$this->defaults, 'read', 'com.apple.screencapture', 'type'], "It's \"here\"\n");
+
+    $items = scanDefaults($this,
+        '#!/bin/sh',
+        '  defaults write com.apple.dock tilesize -int 48  # smaller icons',
+        'defaults write com.apple.dock autohide -bool true',
+        'defaults write com.apple.screencapture name "Shot"',
+        'defaults write com.apple.screencapture type -string png',
+    );
+    $steps = runDefaultsSteps($this, array_map(fn (DriftItem $item) => new Decision($item, Action::UpdateManifest), $items));
+
+    expect($steps)->toBe([
+        'Change com.apple.dock:tilesize to 64 in macos.sh',
+        'Change com.apple.dock:autohide to false in macos.sh',
+        "Change com.apple.screencapture:name to 'My Shot' in macos.sh",
+        'Change com.apple.screencapture:type to "It\'s \"here\"" in macos.sh',
+    ])
+        ->and(file_get_contents($this->script))->toBe(implode("\n", [
+            '#!/bin/sh',
+            '  defaults write com.apple.dock tilesize -int 64  # smaller icons',
+            'defaults write com.apple.dock autohide -bool false',
+            "defaults write com.apple.screencapture name 'My Shot'",
+            'defaults write com.apple.screencapture type -string "It\'s \"here\""',
+        ])."\n")
+        ->and($this->check->scan([$this->script], fn () => null)->items)->toBe([]);
+});
+
+it('refuses to change a line that changed since the scan, or a value the script could not quote', function () {
+    $this->shell
+        ->expect([$this->defaults, 'read', 'com.apple.dock', 'tilesize'], "64\n")
+        ->expect([$this->defaults, 'read', 'com.apple.screencapture', 'name'], "it's \$5\n");
+
+    $items = scanDefaults($this,
+        'defaults write com.apple.dock tilesize -int 48',
+        'defaults write com.apple.screencapture name -string Shot',
+    );
+    [$update] = $this->check->steps(new Decision($items[0], Action::UpdateManifest));
+    file_put_contents($this->script, "defaults write com.apple.dock tilesize -int 50\n");
+
+    expect(fn () => ($update->run)())->toThrow(RuntimeException::class, 'macos.sh changed since the scan')
+        ->and(fn () => $this->check->steps(new Decision($items[1], Action::UpdateManifest)))
+        ->toThrow(RuntimeException::class, 'so the script can\'t quote it');
+});
+
+it('captures the settings that changed and that one line can write', function () {
+    $before = <<<'DUMP'
+        {
+            "Apple Global Domain" =     {
+                AppleInterfaceStyle = Dark;
+            };
+            "com.apple.dock" =     {
+                autohide = 0;
+                "persistent-apps" =         (
+                    a
+                );
+                tilesize = 48;
+            };
+        }
+        DUMP;
+    $after = <<<'DUMP'
+        {
+            "Apple Global Domain" =     {
+                KeyRepeat = 2;
+            };
+            "com.apple.dock" =     {
+                autohide = 1;
+                "persistent-apps" =         (
+                    a,
+                    b
+                );
+                tilesize = 64;
+            };
+            "com.apple.finder" =     {
+                ShowPathbar = 1;
+            };
+            "com.apple.screencapture" =     {
+                name = "My Shot";
+            };
+        }
+        DUMP;
+    $this->shell
+        ->expect([$this->defaults, 'read-type', 'NSGlobalDomain', 'KeyRepeat'], "Type is integer\n")
+        ->expect([$this->defaults, 'read', 'NSGlobalDomain', 'KeyRepeat'], "2\n")
+        ->expect([$this->defaults, 'read-type', 'com.apple.dock', 'autohide'], "Type is boolean\n")
+        ->expect([$this->defaults, 'read', 'com.apple.dock', 'autohide'], "1\n")
+        ->expect([$this->defaults, 'read-type', 'com.apple.dock', 'persistent-apps'], "Type is array\n")
+        ->expect([$this->defaults, 'read-type', 'com.apple.dock', 'tilesize'], "Type is integer\n")
+        ->expect([$this->defaults, 'read', 'com.apple.dock', 'tilesize'], "64\n")
+        ->expect([$this->defaults, 'read-type', 'com.apple.finder', 'ShowPathbar'], "Type is boolean\n")
+        ->expect([$this->defaults, 'read', 'com.apple.finder', 'ShowPathbar'], "1\n")
+        ->expect([$this->defaults, 'read-type', 'com.apple.screencapture', 'name'], "Type is string\n")
+        ->expect([$this->defaults, 'read', 'com.apple.screencapture', 'name'], "My Shot\n");
+
+    $items = captureDefaults($this, [
+        'defaults write com.apple.dock autohide -bool true',
+        'defaults write com.apple.dock tilesize -int 48',
+    ], $before, $after);
+
+    expect(array_map(fn (DriftItem $item) => [$item->kind, $item->subject->key(), $item->detail], $items))->toBe([
+        [DriftKind::Untracked, 'NSGlobalDomain:KeyRepeat', '-int 2'],
+        [DriftKind::Differs, 'com.apple.dock:tilesize', 'is 64, macos.sh writes 48'],
+        [DriftKind::Untracked, 'com.apple.finder:ShowPathbar', '-bool true'],
+        [DriftKind::Untracked, 'com.apple.screencapture:name', '-string My Shot'],
+    ])
+        ->and(array_keys($this->check->actionsFor($items[0])))->toBe(['add', 'ignore', 'skip'])
+        ->and(array_keys($this->check->actionsFor($items[1])))->toBe(['write', 'update', 'ignore', 'skip'])
+        ->and($this->logged)->toBe(["1 setting has a type one line can't write: com.apple.dock:persistent-apps (array)"]);
+});
+
+it('reads only what System Settings, the Dock, Finder and the menu bar save, and not their counters', function () {
+    $this->shell->expect([$this->defaults, 'read'], <<<'DUMP'
+        {
+            "com.apple.DuetExpertCenter.MagicalMoments" =     {
+                lastRun = 42;
+            };
+            "com.apple.Terminal" =     {
+                "Default Window Settings" = Basic;
+            };
+            "com.apple.dock" =     {
+                autohide = 1;
+                lastShowIndicatorTime = "814606546.085025";
+                "mod-count" = 245;
+            };
+            "com.google.Chrome" =     {
+                LastRunAppBundlePath = "/Applications/Google Chrome.app";
+            };
+            "iordv.Droppy" =     {
+                isShelfOpen = 1;
+            };
+        }
+        DUMP);
+
+    expect($this->check->snapshot()->settings)->toBe(['com.apple.dock' => ['autohide' => '1;']]);
+});
+
+it('names the settings one line cannot write only when there are a few', function () {
+    $after = "{\n    \"com.apple.dock\" =     {\n";
+
+    foreach (range(1, 6) as $n) {
+        $after .= "        \"tile-{$n}\" =         (\n            a\n        );\n";
+        $this->shell->expect([$this->defaults, 'read-type', 'com.apple.dock', "tile-{$n}"], "Type is array\n");
+    }
+
+    captureDefaults($this, [], '', "{$after}    };\n}\n");
+
+    expect($this->logged)->toBe(["6 settings have a type one line can't write"]);
+});
+
+it('saves a baseline on the first scan, and reports nothing it does not write', function () {
+    $this->shell
+        ->expect([$this->defaults, 'read'], "{\n    \"com.apple.dock\" =     {\n        autohide = 1;\n    };\n}\n");
+
+    expect(scanDefaults($this))->toBe([])
+        ->and(json_decode((string) file_get_contents($this->baseline), true))->toBe(['com.apple.dock' => ['autohide' => '1;']]);
+});
+
+it('reports a setting that changed since the baseline and that no line writes', function () {
+    file_put_contents($this->script, "defaults write com.apple.dock tilesize -int 48\n");
+    mkdir(dirname($this->baseline));
+    file_put_contents($this->baseline, json_encode(['com.apple.dock' => ['autohide' => '0;', 'tilesize' => '48;', 'orientation' => 'left;']]));
+    $this->shell
+        ->expect([$this->defaults, 'read'], <<<'DUMP'
+            {
+                "com.apple.dock" =     {
+                    autohide = 1;
+                    orientation = left;
+                    tilesize = 64;
+                };
+                "com.apple.finder" =     {
+                    ShowPathbar = 1;
+                };
+            }
+            DUMP)
+        ->expect([$this->defaults, 'read', 'com.apple.dock', 'tilesize'], "64\n")
+        ->expect([$this->defaults, 'read-type', 'com.apple.dock', 'autohide'], "Type is boolean\n")
+        ->expect([$this->defaults, 'read', 'com.apple.dock', 'autohide'], "1\n")
+        ->expect([$this->defaults, 'read-type', 'com.apple.finder', 'ShowPathbar'], "Type is boolean\n")
+        ->expect([$this->defaults, 'read', 'com.apple.finder', 'ShowPathbar'], "1\n");
+
+    $items = $this->check->scan([$this->script], fn () => null)->items;
+
+    expect(array_map(fn (DriftItem $item) => [$item->kind, $item->subject->key(), $item->detail], $items))->toBe([
+        [DriftKind::Differs, 'com.apple.dock:tilesize', 'is 64, macos.sh writes 48'],
+        [DriftKind::Untracked, 'com.apple.dock:autohide', '-bool true'],
+        [DriftKind::Untracked, 'com.apple.finder:ShowPathbar', '-bool true'],
+    ])
+        ->and(array_keys($this->check->actionsFor($items[1])))->toBe(['add', 'ignore', 'skip'])
+        ->and(runDefaultsSteps($this, [new Decision($items[1], Action::AddToManifest, [$this->script])]))->toBe(['Add com.apple.dock:autohide to macos.sh'])
+        ->and(json_decode((string) file_get_contents($this->baseline), true))->toBe(['com.apple.dock' => ['autohide' => '0;', 'tilesize' => '48;', 'orientation' => 'left;']]);
+});
+
+it('saves a new baseline over one it cannot read', function () {
+    mkdir(dirname($this->baseline));
+    file_put_contents($this->baseline, '{"com.apple.dock": "autohide"}');
+    $this->shell->expect([$this->defaults, 'read'], "{\n    \"com.apple.dock\" =     {\n        autohide = 1;\n    };\n}\n");
+
+    expect(scanDefaults($this))->toBe([])
+        ->and(json_decode((string) file_get_contents($this->baseline), true))->toBe(['com.apple.dock' => ['autohide' => '1;']]);
+});
+
+it('adds a captured setting after the last line for its domain, or after the last line', function () {
+    $this->shell
+        ->expect([$this->defaults, 'read-type', 'com.apple.dock', 'mineffect'], "Type is string\n")
+        ->expect([$this->defaults, 'read', 'com.apple.dock', 'mineffect'], "scale\n")
+        ->expect([$this->defaults, 'read-type', 'NSGlobalDomain', 'Key Repeat'], "Type is float\n")
+        ->expect([$this->defaults, 'read', 'NSGlobalDomain', 'Key Repeat'], "1.5\n");
+
+    $items = captureDefaults($this, [
+        '#!/bin/sh',
+        '',
+        '# Dock',
+        '  defaults write com.apple.dock tilesize -int 48',
+        '  defaults write com.apple.dock autohide -bool true',
+        '',
+        'defaults write com.apple.finder AppleShowAllFiles -bool true',
+        '',
+        'killall Dock',
+    ], "{\n}\n", <<<'DUMP'
+        {
+            "com.apple.dock" =     {
+                mineffect = scale;
+            };
+            "Apple Global Domain" =     {
+                "Key Repeat" = "1.5";
+            };
+        }
+        DUMP);
+    $steps = runDefaultsSteps($this, array_map(fn (DriftItem $item) => new Decision($item, Action::AddToManifest, [$this->script]), $items));
+
+    expect($steps)->toBe(['Add com.apple.dock:mineffect to macos.sh', 'Add NSGlobalDomain:Key Repeat to macos.sh'])
+        ->and(file_get_contents($this->script))->toBe(implode("\n", [
+            '#!/bin/sh',
+            '',
+            '# Dock',
+            '  defaults write com.apple.dock tilesize -int 48',
+            '  defaults write com.apple.dock autohide -bool true',
+            '  defaults write com.apple.dock mineffect -string scale',
+            '',
+            'defaults write com.apple.finder AppleShowAllFiles -bool true',
+            "defaults write NSGlobalDomain 'Key Repeat' -float 1.5",
+            '',
+            'killall Dock',
+        ])."\n");
+});
+
+it('starts a new script with a shebang when it adds the first setting', function () {
+    $this->shell
+        ->expect([$this->defaults, 'read-type', 'com.apple.dock', 'autohide'], "Type is boolean\n")
+        ->expect([$this->defaults, 'read', 'com.apple.dock', 'autohide'], "0\n");
+    $new = "{$this->dir}/defaults.sh";
+
+    $items = $this->check->capture(
+        DefaultsSnapshot::parse(''),
+        DefaultsSnapshot::parse("{\n    \"com.apple.dock\" =     {\n        autohide = 0;\n    };\n}\n"),
+        [],
+        fn () => null,
+    )->items;
+    runDefaultsSteps($this, [new Decision($items[0], Action::AddToManifest, [$new])]);
+
+    expect(file_get_contents($new))->toBe("#!/usr/bin/env bash\n\ndefaults write com.apple.dock autohide -bool false\n");
 });

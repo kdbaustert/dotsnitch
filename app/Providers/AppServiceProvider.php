@@ -60,6 +60,7 @@ final class AppServiceProvider extends ServiceProvider
 
         $this->app->singleton(ReportStore::class, fn () => new ReportStore(ReportStore::defaultDirectory(getenv())));
         $this->app->singleton(SyncLog::class, fn () => new SyncLog(ReportStore::defaultDirectory(getenv())));
+        $this->app->when(MacDefaults::class)->needs('$baselineFile')->give(fn () => ReportStore::defaultDirectory(getenv()).'/defaults-baseline.json');
         // DOTSNITCH_RELEASES points self-update at another release folder, like it does scripts/install.sh.
         $this->app->when(SelfUpdate::class)->needs('$releases')->give(fn () => getenv('DOTSNITCH_RELEASES') ?: SelfUpdate::RELEASES);
         $this->app->singleton(StatusLock::class, fn () => new StatusLock(ReportStore::defaultDirectory(getenv()).'/'.StatusLock::FILE));

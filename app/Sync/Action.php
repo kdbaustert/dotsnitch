@@ -24,6 +24,7 @@ enum Action: string
     case Push = 'push';
     case Pull = 'pull';
     case Write = 'write';
+    case UpdateManifest = 'update';
     case Ignore = 'ignore';
     case Skip = 'skip';
 
@@ -49,6 +50,7 @@ enum Action: string
             self::Push => 'Push',
             self::Pull => 'Pull',
             self::Write => 'Write to this Mac',
+            self::UpdateManifest => 'Change dotfiles to match',
             self::Ignore => 'Ignore on this Mac',
             self::Skip => 'Skip',
         };

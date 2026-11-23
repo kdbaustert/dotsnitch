@@ -15,6 +15,9 @@ final class FakeShell implements Shell
     /** @var array<string, ProcessResult> */
     private array $results = [];
 
+    /** @var array<string, list<ProcessResult>> results still to come for a command set up with expectInTurn() */
+    private array $turns = [];
+
     /** @var array<string, true> commands that time out instead of returning */
     private array $timeouts = [];
 
@@ -32,6 +35,20 @@ final class FakeShell implements Shell
     public function expect(array $command, string $output = '', int $exitCode = 0, string $errorOutput = ''): self
     {
         $this->results[$this->keyFor($command)] = new ProcessResult($exitCode, $output, $errorOutput);
+
+        return $this;
+    }
+
+    /**
+     * Sets what run() returns each time this command runs, in order. The last output stays once
+     * the others are used up.
+     *
+     * @param  list<string>  $command
+     */
+    public function expectInTurn(array $command, string $output, string ...$later): self
+    {
+        $this->expect($command, $output);
+        $this->turns[$this->keyFor($command)] = array_map(fn (string $next) => new ProcessResult(0, $next, ''), $later);
 
         return $this;
     }
@@ -68,8 +85,13 @@ final class FakeShell implements Shell
 
         $this->ran[] = $command;
         $this->environments[$key] = $environment;
+        $result = $this->results[$key];
 
-        return $this->results[$key];
+        if (($this->turns[$key] ?? []) !== []) {
+            $this->results[$key] = array_shift($this->turns[$key]);
+        }
+
+        return $result;
     }
 
     /**

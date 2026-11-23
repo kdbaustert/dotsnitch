@@ -24,7 +24,7 @@ curl -fsSL "$beta/install.sh" | DOTSNITCH_RELEASES="$beta" sh
 - compares your global Composer, npm and pnpm packages, Mac App Store apps, VS Code extensions, GitHub CLI extensions, pipx apps, uv tools and Cargo crates with their lists
 - flags a package that's installed at a version its pin doesn't allow
 - checks that the config files in your dotfiles are symlinked into place
-- compares the `defaults write` lines in your macOS setup script with this Mac's settings
+- compares the `defaults write` lines in your macOS setup script with this Mac's settings, and writes the ones you change in System Settings into it
 - lists the tools your mise config asks for that aren't installed
 - tells you when the dotfiles repo has uncommitted files, commits you haven't pushed, or commits to pull
 - writes a first manifest for each tool that doesn't have one yet
@@ -180,11 +180,31 @@ macOS defaults
            is 30, macos.sh writes 33
 ```
 
-"Write to this Mac" runs that line. It never runs the rest of the script, so a `killall Dock` further down is still yours to run.
+"Write to this Mac" runs that line. It never runs the rest of the script, so a `killall Dock` further down is still yours to run. "Change macos.sh to match" goes the other way: it swaps the value in the line for this Mac's and leaves the indent, type and any comment as they were. That one's only offered when the setting has a value here.
 
 It compares lines with a `-bool`, `-int`, `-float` or `-string` value, or a bare value with no type. `-g` is read as `NSGlobalDomain`, `$HOME` and a leading `~` are filled in, and when two lines write the same key the last one counts. That holds across files, so a line in `macos.sh.kennys-macbook-pro` replaces the one in `macos.sh`. It passes over `-array` and `-dict` values, an untyped value that starts with `(`, `{` or `<`, any other `$variable`, lines with `sudo`, `-currentHost` or `-app`, and lines with a second command after `&&` or `;`. The scan says how many it couldn't compare.
 
-It only goes one way here too. A setting you changed in System Settings that no line writes isn't reported.
+A scan also reports a setting you changed that no line writes, as "untracked". The first scan saves every setting in the domains System Settings, the Dock, Finder and the menu bar use to `~/.local/state/dotsnitch/defaults-baseline.json`, and reports none of those. After that, a setting there that's new or has another value than the baseline shows up, if one line can write it:
+
+```
+macOS defaults
+  untracked  com.apple.dock:autohide
+             -bool true
+```
+
+Counters and timestamps macOS keeps in those domains, like the Dock's `mod-count`, are left out (`BOOKKEEPING` in `app/Targets/MacDefaults.php`). `sync` offers "Add to dotfiles", which writes the line, or Ignore for one macOS changes by itself that the list doesn't have yet. The baseline stays as it was, so a setting you changed keeps showing up until it's in the script, ignored, or changed back. Delete the file to start over. To bring in what was already set before the first scan, run `capture --current` once.
+
+### Capturing what you change
+
+```sh
+dotsnitch capture            # read, wait while you change settings, read again
+dotsnitch capture --dry-run  # only show the lines it would write
+dotsnitch capture --current  # list every setting as it is now, nothing ticked
+```
+
+`capture` reads every setting, then waits while you change the ones you want to keep in System Settings, the Dock or Finder. Press Enter and it reads them all again. Each setting that changed is listed, ticked. With `--current` it doesn't wait, and lists every setting whose value isn't in the script yet, unticked, since most are ones you never changed. That takes a few seconds. One the script doesn't write gets a new `defaults write` line, after the last line for the same domain and indented like it, or after the last `defaults write` when that domain has none. One it does write gets its line changed to the new value. A script that doesn't exist yet starts with a shebang.
+
+It only looks at the domains System Settings, the Dock, Finder and the menu bar save to (`SYSTEM_DOMAINS` in `app/Targets/MacDefaults.php`), so what apps and Apple's background services save while it waits is left out. Write lines for an app's settings by hand. It only offers what one line can write: booleans, numbers and strings. An array or dict that changed, like the Dock's list of apps, is left out, and named when there are five or fewer. So are settings kept per host, the ones `-currentHost` writes, since a plain `defaults read` doesn't include them. Some apps save timestamps and counters while you click around, so untick anything you didn't mean to change. It needs a terminal.
 
 ## Dotfiles repo
 
@@ -369,6 +389,7 @@ The outer parentheses make Starship drop the whole group when the command prints
 | `~/.local/state/dotsnitch/last-report.json` | The last scan's results and what was new in it (`$XDG_STATE_HOME` is used if set) |
 | `~/.local/state/dotsnitch/reports/` | The last 30 scans, one file each. `dotsnitch history` lists them |
 | `~/.local/state/dotsnitch/syncs/` | The last 30 syncs that changed anything, one file each: every step it ran, what that step changed, and the error from any step that failed. `dotsnitch undo` reads these. It's saved again after each step, so a sync that dies partway still leaves one |
+| `~/.local/state/dotsnitch/defaults-baseline.json` | The macOS settings the first scan found, so later scans can tell which ones you changed |
 | `~/.local/state/dotsnitch/status.lock` | Keeps two `status` runs, or a `status` and a `sync`, from scanning at once. Its time marks the last background refresh |
 | `~/.local/state/dotsnitch/last-notified.json` | What the last `status --notify` saw, so the next one posts only what came after |
 | `~/.local/state/dotsnitch/schedule.log` | What the daily run printed. Past 1 MB it moves to `schedule.log.1`, replacing the older one |
