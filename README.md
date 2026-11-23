@@ -315,6 +315,8 @@ dotsnitch outdated
 
 This asks Homebrew, the App Store, Composer, npm, pnpm, the GitHub CLI, pipx, uv and Cargo which of your installed packages have a newer version and lists them with both versions. It skips a package manager you don't have, and it leaves out a formula you've held back with `brew pin`. It only lists them, and none of it counts as out of sync, so the prompt count and the daily notification stay about your dotfiles.
 
+The package managers are asked side by side, so the slowest one sets how long it takes. `--checks brew,npm` asks only those. `outdated --json` prints the list as JSON and nothing else: each check has its `label`, an `error` (null unless it couldn't be asked) and its `packages`, each with the `item` (like `formula:jq`), the version `installed` and the `latest`.
+
 Cargo has no command for this, so dotsnitch runs `cargo search` once for each crate, which takes about a second a crate, and it skips a crate installed from git or a folder. pipx needs a version that has `pipx list --outdated`.
 
 I've seen real outdated entries come through for Composer, pnpm and a GitHub CLI extension. Homebrew, npm, pipx, uv, Cargo and the App Store had nothing outdated on my Mac, so those are tested against sample output I wrote by hand.
