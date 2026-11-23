@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Targets;
 
+use App\Contracts\ListsOutdated;
 use App\Contracts\ManifestFormat;
 use App\Contracts\Shell;
 use App\Data\Package;
@@ -20,7 +21,7 @@ use RuntimeException;
  * directory of their own, so installs here run one package per command and an untracked package
  * that shares a group says so before anyone removes it.
  */
-final class Pnpm extends PackageManagerTarget
+final class Pnpm extends PackageManagerTarget implements ListsOutdated
 {
     private readonly NodeSpec $spec;
 
@@ -99,6 +100,22 @@ final class Pnpm extends PackageManagerTarget
         }
 
         return $packages;
+    }
+
+    /**
+     * pnpm exits 1 when it lists anything, and prints {} when it doesn't.
+     *
+     * @throws RuntimeException when pnpm prints no JSON
+     */
+    public function outdated(): array
+    {
+        $listed = $this->json([$this->binary('pnpm'), 'outdated', '-g', '--format', 'json']);
+
+        return array_map(
+            fn (array $entry, string $name) => ['package' => new Package($name, 'package', $entry['current'] ?? null), 'latest' => $entry['latest']],
+            $listed,
+            array_keys($listed),
+        );
     }
 
     /**

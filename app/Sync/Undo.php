@@ -202,10 +202,20 @@ final class Undo
     {
         return new Step(Step::commandLine(['ln', '-sfn', $pointedTo, $target]), function () use ($target, $source, $pointedTo) {
             $this->mustPointAt($target, $source);
+            $temporary = dirname($target).'/.dotsnitch-'.bin2hex(random_bytes(4));
 
-            return @unlink($target) && @symlink($pointedTo, $target)
-                ? []
-                : throw new RuntimeException("Could not repoint {$target}");
+            // One rename, like the repoint it undoes, so a failure leaves the link the sync made.
+            if (! @symlink($pointedTo, $temporary)) {
+                throw new RuntimeException("Could not create a link next to {$target}");
+            }
+
+            if (! @rename($temporary, $target)) {
+                unlink($temporary);
+
+                throw new RuntimeException("Could not repoint {$target}");
+            }
+
+            return [];
         });
     }
 

@@ -71,11 +71,11 @@ final class AppServiceProvider extends ServiceProvider
             getenv(),
         ));
 
-        $this->app->singleton(ManifestEditor::class, function () {
-            $cacheHome = getenv('XDG_CACHE_HOME') ?: $this->home().'/.cache';
-
-            return new ManifestEditor($cacheHome.'/dotsnitch/backups/'.date('Y-m-d-His'));
-        });
+        // With the reports and not under ~/.cache, since a file a link replaced has no other copy
+        // and cache cleaners empty that folder.
+        $this->app->singleton(ManifestEditor::class, fn () => new ManifestEditor(
+            ReportStore::defaultDirectory(getenv()).'/backups/'.date('Y-m-d-His')
+        ));
     }
 
     /**

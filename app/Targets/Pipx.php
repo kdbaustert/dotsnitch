@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Targets;
 
+use App\Contracts\ListsOutdated;
 use App\Contracts\ManifestFormat;
 use App\Contracts\Shell;
 use App\Data\Package;
@@ -16,7 +17,7 @@ use RuntimeException;
 /**
  * Python apps installed with pipx. Packages injected into an app's venv aren't counted.
  */
-final class Pipx extends PackageManagerTarget
+final class Pipx extends PackageManagerTarget implements ListsOutdated
 {
     private readonly PythonSpec $spec;
 
@@ -90,6 +91,22 @@ final class Pipx extends PackageManagerTarget
         }
 
         return $packages;
+    }
+
+    /**
+     * Needs a pipx that has `list --outdated`. An older one fails here with its usage text.
+     * Packages injected into an app's venv are left out, as they are from the check.
+     *
+     * @throws RuntimeException when pipx prints no JSON
+     */
+    public function outdated(): array
+    {
+        $listed = $this->json([$this->binary('pipx'), 'list', '--outdated', '--output', 'json'])['data']['packages'] ?? [];
+
+        return array_values(array_map(
+            fn (array $entry) => ['package' => new Package(PythonSpec::normalized($entry['package']), 'package', $entry['version']), 'latest' => $entry['latest_version']],
+            array_filter($listed, fn (array $entry) => ! ($entry['injected'] ?? false)),
+        ));
     }
 
     /**

@@ -64,3 +64,33 @@ it('throws when the release lists no checksum for this Mac', function () {
 
     expect(fn () => $this->update->update($this->binary))->toThrow(RuntimeException::class, 'The release has no checksum for dotsnitch-');
 });
+
+it('says the release is older only when version.txt names a lower version', function (?string $release, string $running, bool $older) {
+    if ($release !== null) {
+        file_put_contents("{$this->dir}/release/version.txt", "{$release}\n");
+    }
+
+    expect($this->update->releaseIsOlderThan($running))->toBe($older);
+})->with([
+    'a beta after the release' => ['v0.1.0', 'v0.2.0-beta.1', true],
+    'a beta of the release' => ['v0.1.0', 'v0.1.0-beta.2', false],
+    'the release itself' => ['v0.1.0', 'v0.1.0', false],
+    'an older release' => ['v0.2.0', 'v0.1.0', false],
+    'a release with no version.txt' => [null, 'v0.2.0-beta.1', false],
+]);
+
+it('removes the download when it can\'t be put in place', function () {
+    // Locked the way Finder locks a file, so nothing can be renamed over it.
+    exec('chflags uchg '.escapeshellarg($this->binary));
+    // PHPUnit reports rename()'s warning even under @, so it's silenced for this one call.
+    set_error_handler(fn () => true);
+
+    try {
+        expect(fn () => $this->update->update($this->binary))->toThrow(RuntimeException::class, "Couldn't replace {$this->binary}.")
+            ->and(file_get_contents($this->binary))->toBe('old')
+            ->and(file_exists("{$this->dir}/bin/.dotsnitch.new"))->toBeFalse();
+    } finally {
+        restore_error_handler();
+        exec('chflags nouchg '.escapeshellarg($this->binary));
+    }
+});

@@ -11,24 +11,22 @@ use Illuminate\Support\Collection;
 use RuntimeException;
 
 /**
- * The mas or vscode lines of a Brewfile, read from its text. brew bundle list prints an app's
- * name without its id, so brew can't read these the way it does for BrewfileFormat. A line inside
- * a Ruby conditional counts as listed whichever way the condition goes.
+ * One other check's lines of a Brewfile (mas, vscode, cargo, uv or npm), read from its text. brew
+ * bundle list prints an app's name without its id, so brew can't read these the way it does for
+ * BrewfileFormat. A line inside a Ruby conditional counts as listed whichever way the condition
+ * goes.
  */
 final class BrewfileLineFormat implements ManifestFormat
 {
     /** Such as `mas "Xcode", id: 497799835`, capturing the name and the id. */
     private const MAS_LINE = '/^\s*mas\s+(["\'])(.*?)\1\s*,\s*id:\s*(\d+)/m';
 
-    /** Such as `vscode "editorconfig.editorconfig"`. */
-    private const VSCODE_LINE = '/^\s*vscode\s+(["\'])(.+?)\1/m';
-
     /**
-     * @param  string  $type  "app" for the mas lines, "extension" for the vscode ones
+     * @param  string  $directive  whose lines to read: mas, vscode, cargo, uv or npm
      * @param  array<string, string>  $titles  app name by id, written into new mas lines
      */
     public function __construct(
-        private readonly string $type,
+        private readonly string $directive,
         private readonly array $titles = [],
     ) {}
 
@@ -53,7 +51,8 @@ final class BrewfileLineFormat implements ManifestFormat
     }
 
     /**
-     * Extension ids come back in lowercase, the way VS Code compares them.
+     * Extension ids come back in lowercase, the way VS Code compares them, and uv tools under the
+     * name pip would compare.
      *
      * @throws RuntimeException when the file can't be read
      */
@@ -65,17 +64,23 @@ final class BrewfileLineFormat implements ManifestFormat
 
         $contents = (string) file_get_contents($path);
 
-        if ($this->type === 'app') {
+        if ($this->directive === 'mas') {
             return collect(array_keys(self::appTitles($contents)))->map(fn (int|string $id) => new Package((string) $id, 'app'));
         }
 
-        preg_match_all(self::VSCODE_LINE, $contents, $matches);
+        // Such as `vscode "editorconfig.editorconfig"`, with any options after the name left alone.
+        preg_match_all('/^\s*'.$this->directive.'\s+(["\'])(.+?)\1/m', $contents, $matches);
 
-        return collect($matches[2])->map(fn (string $name) => new Package(strtolower($name), 'extension'));
+        return collect($matches[2])->map(fn (string $name) => match ($this->directive) {
+            'vscode' => new Package(strtolower($name), 'extension'),
+            'cargo' => new Package($name, 'crate'),
+            'uv' => new Package(PythonSpec::normalized($name), 'package'),
+            default => new Package($name, 'package'),
+        });
     }
 
     public function edit(string $contents): ManifestEdit
     {
-        return new BrewfileEdit($contents, $this->titles);
+        return new BrewfileEdit($contents, $this->titles, $this->directive);
     }
 }

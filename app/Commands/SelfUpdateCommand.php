@@ -37,6 +37,14 @@ final class SelfUpdateCommand extends Command
             return self::FAILURE;
         }
 
+        $running = config('app.version');
+
+        if (spin(fn () => $update->releaseIsOlderThan($running), 'Asking for the latest release…')) {
+            $this->info("This is {$running}, which is newer than the latest release, so there's nothing to install.");
+
+            return self::SUCCESS;
+        }
+
         try {
             $updated = spin(fn () => $update->update($command[0]), 'Downloading the latest release…');
         } catch (RuntimeException $e) {

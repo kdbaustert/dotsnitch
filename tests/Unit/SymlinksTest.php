@@ -303,6 +303,20 @@ it('moves the old destination into backups after a repoint when asked to', funct
         ->and($effects[1])->toBe(['kind' => 'move', 'from' => "{$this->dir}/old/.vimrc", 'to' => "{$this->dir}/backups{$this->dir}/old/.vimrc"]);
 });
 
+it('backs up the old destination of a relative link that climbs with ../', function () {
+    putFile("{$this->root}/.config/nvim/init.lua");
+    putFile("{$this->home}/old/nvim/init.lua", 'old');
+    mkdir("{$this->home}/.config");
+    symlink('../old/nvim', "{$this->home}/.config/nvim");
+    $item = new DriftItem('symlinks', DriftKind::WrongTarget, new Link("{$this->root}/.config/nvim", "{$this->home}/.config/nvim"));
+
+    $effects = runLinkAction(Action::RepointAndBackUp, $item);
+
+    expect(file_exists("{$this->home}/old/nvim"))->toBeFalse()
+        ->and(file_get_contents("{$this->dir}/backups{$this->home}/old/nvim/init.lua"))->toBe('old')
+        ->and($effects[1])->toBe(['kind' => 'move', 'from' => "{$this->home}/old/nvim", 'to' => "{$this->dir}/backups{$this->home}/old/nvim"]);
+});
+
 it('only repoints when the old destination is already gone', function () {
     putFile("{$this->root}/.vimrc");
     symlink('old/.vimrc', "{$this->home}/.vimrc");

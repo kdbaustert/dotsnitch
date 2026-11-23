@@ -589,6 +589,32 @@ it('only takes a Brewfile as a manifest when it has a line for the check', funct
         ->and($mas->hasEntriesIn($mac->manifest('mas.txt', '')))->toBeTrue();
 });
 
+it('reads the cargo, uv and npm lines of a Brewfile and edits only its own', function () {
+    $mac = new GlobalsMac;
+    $mac->shell->expect([$mac->bin('cargo'), 'install', '--list'], $mac->fixture('cargo/install-list.txt'));
+    $mac->shell->expect([$mac->bin('uv'), 'tool', 'list'], $mac->fixture('uv/tool-list.txt'));
+    $cargo = new Cargo($mac->shell, $mac->paths, $mac->editor);
+    $uv = new Uv($mac->shell, $mac->paths, $mac->editor);
+    $npm = npmOn($mac);
+    $brewfile = $mac->manifest('Brewfile', "brew \"jq\"\ncargo \"ripgrep\"\nuv \"Ruff\"\nnpm \"typescript\"\n");
+
+    $crates = $cargo->scan([$brewfile], fn () => null);
+    $tools = $uv->scan([$brewfile], fn () => null);
+    $packages = $npm->scan([$brewfile], fn () => null);
+    [$addCrate] = $cargo->steps(new Decision(globalItem($crates, 'untracked:crate:cargo-edit'), Action::AddToManifest, [$brewfile]));
+    [$addTool] = $uv->steps(new Decision(globalItem($tools, 'untracked:package:httpie'), Action::AddToManifest, [$brewfile]));
+    [$removePackage] = $npm->steps(new Decision(globalItem($packages, 'missing:package:typescript'), Action::RemoveFromManifest, [$brewfile]));
+    ($addCrate->run)();
+    ($addTool->run)();
+    ($removePackage->run)();
+
+    expect(globalDrift($crates))->toBe([['untracked', 'crate:cargo-edit', null], ['untracked', 'crate:tool', null]])
+        ->and(globalDrift($tools))->toBe([['untracked', 'package:httpie', null]])
+        ->and(globalDrift($packages))->toBe([['missing', 'package:typescript', null], ['untracked', 'package:neovim', null]])
+        ->and(file_get_contents($brewfile))->toBe("brew \"jq\"\ncargo \"ripgrep\"\ncargo \"cargo-edit\"\nuv \"Ruff\"\nuv \"httpie\"\n")
+        ->and($cargo->hasEntriesIn($mac->manifest('Brewfile.work', "brew \"jq\"\n")))->toBeFalse();
+});
+
 it('checks VS Code extensions against a list or a Brewfile, whatever the case of an id', function (string $name, string $contents, string $afterAdd) {
     $mac = new GlobalsMac;
     $mac->shell->expect([$mac->bin('code'), '--list-extensions', '--show-versions'], "EditorConfig.EditorConfig@0.16.4\nbmewburn.vscode-intelephense-client@1.14.4\n");
@@ -654,4 +680,80 @@ it('lists outdated Composer globals, and takes the [] Composer prints for none',
     $mac->shell->expect($command, "[]\n");
 
     expect($composer->outdated())->toBe([]);
+});
+
+/**
+ * @param  list<array{package: Package, latest: string}>  $outdated
+ * @return list<array{string, ?string, string}> each entry's package key, installed version and latest version
+ */
+function outdatedRows(array $outdated): array
+{
+    return array_map(fn (array $entry) => [$entry['package']->key(), $entry['package']->version, $entry['latest']], $outdated);
+}
+
+it('lists outdated pnpm globals, and takes the {} pnpm prints for none', function () {
+    $mac = new GlobalsMac;
+    $pnpm = new Pnpm($mac->shell, $mac->paths, $mac->editor);
+    $command = [$mac->bin('pnpm'), 'outdated', '-g', '--format', 'json'];
+    $mac->shell->expect($command, '{"typescript": {"current": "6.0.3", "latest": "7.0.2", "wanted": "6.0.3", "isDeprecated": false, "dependencyType": "dependencies"}}', exitCode: 1);
+
+    expect(outdatedRows($pnpm->outdated()))->toBe([['package:typescript', '6.0.3', '7.0.2']]);
+
+    $mac->shell->expect($command, "{}\n");
+
+    expect($pnpm->outdated())->toBe([]);
+});
+
+it('lists outdated App Store apps by name, from the columns mas prints', function () {
+    $mac = new GlobalsMac;
+    $mac->shell->expect([$mac->bin('mas'), 'outdated'], " 497799835  Xcode        (16.4  -> 26.1)\n1569813296  1Password for Safari  (8.12.4 -> 8.12.46)\n");
+
+    $outdated = (new Mas($mac->shell, $mac->paths, $mac->editor))->outdated();
+
+    expect(outdatedRows($outdated))->toBe([['app:Xcode', '16.4', '26.1'], ['app:1Password for Safari', '8.12.4', '8.12.46']]);
+});
+
+it('lists outdated gh extensions by repo, from a dry run of upgrading them all', function () {
+    $mac = new GlobalsMac;
+    $mac->shell
+        ->expect([$mac->bin('gh'), 'extension', 'list'], "gh dash\tdlvhdr/gh-dash\tv4.20.0\ngh branch\tmislav/gh-branch\t0d1bc7e2\n")
+        ->expect([$mac->bin('gh'), 'extension', 'upgrade', '--all', '--dry-run'], "[dash]: would have upgraded from v4.20.0 to v4.26.3\n[branch]: already up to date\n");
+
+    $outdated = (new Gh($mac->shell, $mac->paths, $mac->editor))->outdated();
+
+    expect(outdatedRows($outdated))->toBe([['extension:dlvhdr/gh-dash', 'v4.20.0', 'v4.26.3']]);
+});
+
+it('lists outdated pipx apps, without what was injected into one', function () {
+    $mac = new GlobalsMac;
+    $mac->shell->expect([$mac->bin('pipx'), 'list', '--outdated', '--output', 'json'], json_encode(['data' => ['packages_checked' => 3, 'skipped' => [], 'packages' => [
+        ['environment' => 'black', 'package' => 'Black', 'version' => '24.1.0', 'latest_version' => '25.9.0', 'injected' => false, 'pinned' => false],
+        ['environment' => 'black', 'package' => 'click', 'version' => '8.1.0', 'latest_version' => '8.3.0', 'injected' => true, 'pinned' => false],
+    ]]]));
+
+    $outdated = (new Pipx($mac->shell, $mac->paths, $mac->editor))->outdated();
+
+    expect(outdatedRows($outdated))->toBe([['package:black', '24.1.0', '25.9.0']]);
+});
+
+it('lists outdated uv tools, not the current ones or their entry points', function () {
+    $mac = new GlobalsMac;
+    $mac->shell->expect([$mac->bin('uv'), 'tool', 'list', '--outdated'], "ruff v0.6.9 [latest: 0.14.2]\n- ruff\n");
+
+    $outdated = (new Uv($mac->shell, $mac->paths, $mac->editor))->outdated();
+
+    expect(outdatedRows($outdated))->toBe([['package:ruff', '0.6.9', '0.14.2']]);
+});
+
+it('lists outdated crates by searching crates.io, and skips one installed from git', function () {
+    $mac = new GlobalsMac;
+    $cargo = $mac->bin('cargo');
+    $mac->shell
+        ->expect([$cargo, 'install', '--list'], "ripgrep v14.1.0:\n    rg\nfd-find v10.2.0:\n    fd\njj-cli v0.30.0 (https://github.com/jj-vcs/jj#4f1a2b3c):\n    jj\n")
+        ->expect([$cargo, 'search', '--limit', '1', 'ripgrep'], "ripgrep = \"14.1.1\"    # Line-oriented search tool\n... and 212 crates more (use --limit N to see more)\n")
+        ->expect([$cargo, 'search', '--limit', '1', 'fd-find'], "fd-find = \"10.2.0\"    # A simple, fast alternative to find\n");
+
+    $outdated = (new Cargo($mac->shell, $mac->paths, $mac->editor))->outdated();
+
+    expect(outdatedRows($outdated))->toBe([['crate:ripgrep', '14.1.0', '14.1.1']]);
 });

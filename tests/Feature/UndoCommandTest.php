@@ -114,7 +114,8 @@ it('points a repointed link back, and puts a removed link back', function () {
     $this->artisan('undo')->expectsConfirmation('Undo these changes?', 'yes')->assertExitCode(0);
 
     expect(readlink($repointed))->toBe('/old/dotfiles/.vimrc')
-        ->and(readlink($removed))->toBe('/old/dotfiles/.gone');
+        ->and(readlink($removed))->toBe('/old/dotfiles/.gone')
+        ->and(glob("{$this->dir}/.dotsnitch-*"))->toBe([]);
 });
 
 it('leaves a link that points somewhere else now', function () {

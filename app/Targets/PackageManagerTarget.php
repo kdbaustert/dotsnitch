@@ -12,6 +12,7 @@ use App\Contracts\Shell;
 use App\Contracts\SyncTarget;
 use App\Data\Package;
 use App\Manifests\BashArrayFormat;
+use App\Manifests\BrewfileLineFormat;
 use App\Manifests\LineListFormat;
 use App\Support\ManifestEditor;
 use App\Support\PathResolver;
@@ -99,6 +100,7 @@ abstract class PackageManagerTarget implements ComparesSides, SyncTarget
         $installed = $this->installed()->keyBy(fn (Package $package) => $package->key());
         $this->installedByKey = $installed->all();
         $log("{$installed->count()} installed");
+        /** @var Collection<string, Package> $listed */
         $listed = collect();
         $this->listedIn = [];
         $sharingName = array_count_values(array_map(basename(...), $manifests));
@@ -372,6 +374,14 @@ abstract class PackageManagerTarget implements ComparesSides, SyncTarget
     }
 
     /**
+     * SharesManifest's answer for the checks that read their own lines of a Brewfile.
+     */
+    public function hasEntriesIn(string $path): bool
+    {
+        return ! BrewfileLineFormat::isBrewfile($path) || $this->format($path)->read($path)->isNotEmpty();
+    }
+
+    /**
      * A .sh reads its bash arrays; anything else is a list of names.
      */
     protected function scriptOrList(string $manifest, PackageSpec $spec): ManifestFormat
@@ -503,7 +513,7 @@ abstract class PackageManagerTarget implements ComparesSides, SyncTarget
      * Builds a ManifestEditor change that runs $change once per spelling of the package.
      *
      * @param  Closure(ManifestEdit, Package): bool  $change
-     * @return Closure(string): Closure(string): string takes the manifest path, then its contents
+     * @return Closure(string): (Closure(string): string) takes the manifest path, then its contents
      */
     private function editing(Package $package, Closure $change): Closure
     {

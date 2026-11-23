@@ -53,11 +53,7 @@ abstract class LineBasedEdit implements ManifestEdit
     {
         $found = $this->linesOf($package);
 
-        foreach ($found as $index) {
-            unset($this->lines[$index]);
-        }
-
-        $this->lines = array_values($this->lines);
+        $this->lines = array_values(array_diff_key($this->lines, array_flip($found)));
 
         return $found !== [];
     }

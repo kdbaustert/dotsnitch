@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace App\Support;
 
 use Closure;
+use FilesystemIterator;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use RuntimeException;
+use UnexpectedValueException;
 
 /**
  * Writes manifest edits for one run. Each file is copied into this run's backup folder before
@@ -14,6 +18,9 @@ use RuntimeException;
  */
 final class ManifestEditor
 {
+    /** As many as SyncLog keeps records, and every run with a backup has a record that names it. */
+    private const RUNS_KEPT = 30;
+
     /** @var array<string, true> real paths changed this run, in order */
     private array $changed = [];
 
@@ -21,7 +28,7 @@ final class ManifestEditor
     private array $copies = [];
 
     /**
-     * @param  string  $backups  this run's folder, such as ~/.cache/dotsnitch/backups/2026-11-21-093000; created on the first backup
+     * @param  string  $backups  this run's folder, such as ~/.local/state/dotsnitch/backups/2026-11-21-093000; created on the first backup
      */
     public function __construct(private readonly string $backups) {}
 
@@ -110,6 +117,8 @@ final class ManifestEditor
             throw new RuntimeException("Could not move {$path} to {$destination}");
         }
 
+        $this->dropOldRuns();
+
         return $destination;
     }
 
@@ -127,7 +136,41 @@ final class ManifestEditor
             throw new RuntimeException("Could not back up {$path} to {$copy}");
         }
 
+        $this->dropOldRuns();
+
         return $copy;
+    }
+
+    /**
+     * Deletes the oldest runs' folders next to this one, leaving the newest RUNS_KEPT. Only
+     * folders named like a run's start time count. One that can't be read or deleted is left.
+     */
+    private function dropOldRuns(): void
+    {
+        $runs = array_filter(
+            glob(dirname($this->backups).'/*', GLOB_ONLYDIR) ?: [],
+            fn (string $run) => preg_match('/^\d{4}-\d{2}-\d{2}-\d{6}$/', basename($run)) === 1,
+        );
+        sort($runs);
+
+        foreach (array_slice($runs, 0, max(count($runs) - self::RUNS_KEPT, 0)) as $old) {
+            try {
+                // Links aren't followed, so a backed-up link's destination is never touched.
+                $inside = new RecursiveIteratorIterator(
+                    new RecursiveDirectoryIterator($old, FilesystemIterator::SKIP_DOTS),
+                    RecursiveIteratorIterator::CHILD_FIRST,
+                );
+
+                foreach ($inside as $entry) {
+                    $entry->isDir() && ! $entry->isLink() ? @rmdir($entry->getPathname()) : @unlink($entry->getPathname());
+                }
+            } catch (UnexpectedValueException) {
+                // A folder in it can't be opened. The backup this run just made still counts.
+                continue;
+            }
+
+            @rmdir($old);
+        }
     }
 
     /**

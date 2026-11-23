@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Targets;
 
+use App\Contracts\ListsOutdated;
 use App\Contracts\ManifestFormat;
+use App\Contracts\SharesManifest;
 use App\Contracts\Shell;
 use App\Data\Package;
+use App\Manifests\BrewfileLineFormat;
 use App\Manifests\PythonSpec;
 use App\Support\ManifestEditor;
 use App\Support\PathResolver;
@@ -16,10 +19,13 @@ use RuntimeException;
 /**
  * Python tools installed with `uv tool install`.
  */
-final class Uv extends PackageManagerTarget
+final class Uv extends PackageManagerTarget implements ListsOutdated, SharesManifest
 {
     /** A tool line, "ruff v0.6.9", as opposed to the "- ruff" entry point lines under it. */
     private const TOOL_LINE = '/^(\S+) v(\S+)/';
+
+    /** The same line from `uv tool list --outdated`: "ruff v0.6.9 [latest: 0.8.0]". */
+    private const OUTDATED_LINE = '/^(\S+) v(\S+).*\[latest: ([^\]]+)\]/';
 
     private readonly PythonSpec $spec;
 
@@ -58,19 +64,20 @@ final class Uv extends PackageManagerTarget
     }
 
     /**
-     * A plain list, or a uv-tools.sh whose bash array holds the names.
+     * A plain list, a uv-tools.sh whose bash array holds the names, or the uv lines of a Brewfile.
      */
     public function manifestPatterns(): array
     {
-        return ['uv-tools.txt', 'uv-tools.sh'];
+        return ['uv-tools.txt', 'uv-tools.sh', 'Brewfile', '.Brewfile'];
     }
 
     /**
      * uv-tools.sh or the plain list. Entries are requirements such as "ruff>=0.6", as for pipx.
+     * A Brewfile's uv lines are read by name only.
      */
     protected function format(string $manifest): ManifestFormat
     {
-        return $this->scriptOrList($manifest, $this->spec);
+        return BrewfileLineFormat::isBrewfile($manifest) ? new BrewfileLineFormat('uv') : $this->scriptOrList($manifest, $this->spec);
     }
 
     /**
@@ -85,6 +92,22 @@ final class Uv extends PackageManagerTarget
             ->map(fn (string $line) => preg_match(self::TOOL_LINE, $line, $match) ? new Package(PythonSpec::normalized($match[1]), 'package', $match[2]) : null)
             ->filter()
             ->values();
+    }
+
+    /**
+     * @throws RuntimeException when uv tool list fails
+     */
+    public function outdated(): array
+    {
+        $outdated = [];
+
+        foreach ($this->lines([$this->binary('uv'), 'tool', 'list', '--outdated']) as $line) {
+            if (preg_match(self::OUTDATED_LINE, $line, $match)) {
+                $outdated[] = ['package' => new Package(PythonSpec::normalized($match[1]), 'package', $match[2]), 'latest' => $match[3]];
+            }
+        }
+
+        return $outdated;
     }
 
     /**

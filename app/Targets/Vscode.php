@@ -57,14 +57,9 @@ final class Vscode extends PackageManagerTarget implements SharesManifest
         return ['vscode-extensions.txt', 'Brewfile', '.Brewfile'];
     }
 
-    public function hasEntriesIn(string $path): bool
-    {
-        return ! BrewfileLineFormat::isBrewfile($path) || $this->format($path)->read($path)->isNotEmpty();
-    }
-
     protected function format(string $manifest): ManifestFormat
     {
-        return BrewfileLineFormat::isBrewfile($manifest) ? new BrewfileLineFormat('extension') : new LineListFormat($this->spec);
+        return BrewfileLineFormat::isBrewfile($manifest) ? new BrewfileLineFormat('vscode') : new LineListFormat($this->spec);
     }
 
     /**
