@@ -246,9 +246,9 @@ After the report it asks how you want to handle the drift:
 
 For each item you can add it to your dotfiles, install it, uninstall it, swap a deprecated package for its successor, ignore it on this Mac, or skip it. Adding asks whether it goes in the main manifest (every Mac) or the one with this Mac's hostname on the end. A setup script only gets that choice once the hostname copy exists, since a new empty one has no array to add to.
 
-You always see the whole plan before anything runs. Uninstalls get their own yes or no, and it defaults to no.
+You always see the whole plan before anything runs. Uninstalls get their own yes or no, and it defaults to no. If a file you're adopting has a line that looks like a secret, like an npm `_authToken`, a GitHub token, a private key or a `password =` line, it names the file, line and kind (never the value) and the final yes or no defaults to no.
 
-When it's done it scans again and saves the new report. If it edited files in a git checkout, it shows `git status --short` for them and offers to commit them. That defaults to no as well. A file that already had uncommitted changes before the sync gets a warning first, since the commit takes those changes too.
+When it's done it scans again and saves the new report. If it edited files in a git checkout, it shows `git status --short` for them and offers to commit them. That defaults to no as well. A file that already had uncommitted changes before the sync gets a warning first, since the commit takes those changes too, and so does a file with a line that looks like a secret. The check is a pattern match, so it can miss a secret or flag a placeholder.
 
 ### Undoing a sync
 

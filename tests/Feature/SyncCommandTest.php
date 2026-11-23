@@ -413,6 +413,39 @@ it('offers to commit a file it adopted into the repo', function () {
         ->and(readlink("{$home}/.zshrc"))->toBe("{$repo}/.zshrc");
 });
 
+it('warns before adopting or committing a file that looks like it holds a secret', function () {
+    $home = realpath($this->dir);
+    $repo = "{$home}/repo";
+    $token = 'npm_'.str_repeat('x', 36);
+    file_put_contents("{$repo}/install.conf.yaml", "- link:\n    ~/.npmrc: .npmrc\n");
+    file_put_contents("{$repo}/.npmrc", "repo\n");
+    file_put_contents("{$home}/.npmrc", "fund=false\n//registry.npmjs.org/:_authToken={$token}\n");
+    file_put_contents("{$this->dir}/brew/bin/git", "#!/bin/sh\n");
+    chmod("{$this->dir}/brew/bin/git", 0755);
+    $git = ["{$this->dir}/brew/bin/git", '-C', $repo];
+    $shell = (new FakeShell)
+        ->expect([...$git, 'rev-parse', '--is-inside-work-tree'], "true\n")
+        ->expect([...$git, 'diff', '--name-only', '--relative', '-z', 'HEAD'])
+        ->expect([...$git, 'status', '--short', '--untracked-files=all', '--', '.npmrc'], " M .npmrc\n");
+    $this->app->instance(Shell::class, $shell);
+    $this->app->instance(Symlinks::class, new Symlinks(app(DotfilesRepo::class), $shell, app(ManifestEditor::class), ['HOME' => $home]));
+    answerWithQuestions();
+
+    $this->artisan('sync', ['--repo' => $repo, '--checks' => 'symlinks'])
+        ->expectsQuestion('How do you want to resolve it?', 'each')
+        ->expectsQuestion("Symlinked config files, conflict: {$home}/.npmrc", 'adopt')
+        ->expectsOutputToContain('These lines look like they hold a secret. Adopting moves them into your dotfiles repo')
+        ->expectsOutputToContain("{$home}/.npmrc line 2: an npm token")
+        ->expectsConfirmation('Apply these changes?', 'yes')
+        ->expectsOutputToContain('These lines look like they hold a secret. A commit keeps them in the history')
+        ->expectsOutputToContain('  .npmrc line 2: an npm token')
+        ->doesntExpectOutputToContain($token)
+        ->expectsConfirmation('Commit these changes to your dotfiles?', 'no')
+        ->assertExitCode(0);
+
+    expect(array_map(fn (array $command) => $command[3], $shell->ran()))->toBe(['rev-parse', 'diff', 'status']);
+});
+
 it('prints the diff for Show diff and asks again', function () {
     $home = realpath($this->dir);
     $repo = "{$home}/repo";

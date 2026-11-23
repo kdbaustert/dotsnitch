@@ -13,6 +13,7 @@ use App\Data\Link;
 use App\Support\ManifestEditor;
 use App\Support\Manifests;
 use App\Support\PathResolver;
+use App\Support\SecretScanner;
 use App\Sync\Action;
 use App\Sync\Change;
 use App\Sync\Decision;
@@ -46,6 +47,8 @@ use function Laravel\Prompts\table;
 trait ResolvesDrift
 {
     use ScansChecks;
+
+    private const SECRETS_SHOWN = 5;
 
     /** @var list<string> what couldn't be planned or run, shown once at the end */
     private array $failures = [];
@@ -92,9 +95,11 @@ trait ResolvesDrift
         }
 
         $this->showSteps($confirmed);
+        $secrets = $this->secretsIn($this->adoptedPaths($confirmed));
+        $this->warnAboutSecrets($secrets, 'Adopting moves them into your dotfiles repo, so a commit or push takes them along.');
 
         // A change that couldn't be planned still fails the run after a no.
-        if (! confirm('Apply these changes?', default: true)) {
+        if (! confirm('Apply these changes?', default: $secrets === [])) {
             return $this->failureReport();
         }
 
@@ -644,6 +649,12 @@ trait ResolvesDrift
             $this->warn('Already changed before this sync, and the commit takes those changes too: '.implode(', ', $yours));
         }
 
+        $this->warnAboutSecrets(
+            $this->secretsIn(array_map(fn (string $file) => "{$root}/{$file}", $files)),
+            'A commit keeps them in the history, even after you delete them.',
+            $root,
+        );
+
         if (! confirm('Commit these changes to your dotfiles?', default: false, hint: $this->commitMessage($applied))) {
             return;
         }
@@ -659,6 +670,62 @@ trait ResolvesDrift
         }
 
         $this->laravel->make(SyncLog::class)->committed($root, $this->commitMessage($applied));
+    }
+
+    /**
+     * What each adopt moves from ~ into the repo.
+     *
+     * @param  list<Change>  $changes
+     * @return list<string>
+     */
+    private function adoptedPaths(array $changes): array
+    {
+        $paths = [];
+
+        foreach ($changes as $change) {
+            $subject = $change->decision->item->subject;
+
+            if ($change->decision->action === Action::Adopt && $subject instanceof Link) {
+                $paths[] = $subject->target;
+            }
+        }
+
+        return $paths;
+    }
+
+    /**
+     * @param  list<string>  $paths  files or folders
+     * @return list<array{path: string, line: int, kind: string}>
+     */
+    private function secretsIn(array $paths): array
+    {
+        $scanner = $this->laravel->make(SecretScanner::class);
+
+        return array_merge(...array_map($scanner->scan(...), $paths));
+    }
+
+    /**
+     * Names the file, line and kind of up to five, and never the value.
+     *
+     * @param  list<array{path: string, line: int, kind: string}>  $secrets
+     * @param  string  $root  paths under it are shown relative to it
+     */
+    private function warnAboutSecrets(array $secrets, string $why, string $root = ''): void
+    {
+        if ($secrets === []) {
+            return;
+        }
+
+        $this->warn("These lines look like they hold a secret. {$why}");
+
+        foreach (array_slice($secrets, 0, self::SECRETS_SHOWN) as $secret) {
+            $path = $root !== '' && str_starts_with($secret['path'], "{$root}/") ? substr($secret['path'], strlen($root) + 1) : $secret['path'];
+            $this->line('  '.OutputFormatter::escape($path)." line {$secret['line']}: {$secret['kind']}");
+        }
+
+        if (count($secrets) > self::SECRETS_SHOWN) {
+            $this->line('  and '.(count($secrets) - self::SECRETS_SHOWN).' more');
+        }
     }
 
     /**
