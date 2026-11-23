@@ -12,6 +12,7 @@ use ErrorException;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
 use Symfony\Component\Console\Formatter\OutputFormatter;
+use TypeError;
 
 use function Laravel\Prompts\confirm;
 
@@ -42,36 +43,36 @@ final class UndoCommand extends Command
 
         try {
             $record = JsonFile::read($path) ?? throw new RuntimeException("No sync record at {$path}");
+            // Interpolated here so an array in started_at fails inside the try.
+            $startedAt = "{$record['started_at']}";
+            $undone = $record['undone'] ?? [];
+            $steps = $undo->steps($record['steps'], $undone);
+            $packageSteps = $undo->packageSteps($record['steps'], $undone);
+
+            if ($this->option('packages')) {
+                $steps = [...$steps, ...$packageSteps];
+                $this->showLeftAlone($undo->oneWayCommands($record['steps']), $record['commit']);
+            } else {
+                $this->showLeftAlone($undo->commands($record['steps'], $undone), $record['commit'], $packageSteps === [] ? null : 'Add --packages to take back the ones that can be.');
+            }
         } catch (RuntimeException $e) {
             $this->error($e->getMessage());
 
             return self::FAILURE;
-        }
+        } catch (ErrorException|TypeError) {
+            // A record edited by hand can be missing a key or hold the wrong type.
+            $this->error("{$path} isn't a sync record dotsnitch can read.");
 
-        if (isset($record['undone_at'])) {
-            $this->line("The sync of {$record['started_at']} was already undone.");
-
-            return self::SUCCESS;
-        }
-
-        $steps = $undo->steps($record['steps']);
-
-        $packageSteps = $undo->packageSteps($record['steps']);
-
-        if ($this->option('packages')) {
-            $steps = [...$steps, ...$packageSteps];
-            $this->showLeftAlone($undo->oneWayCommands($record['steps']), $record['commit']);
-        } else {
-            $this->showLeftAlone($undo->commands($record['steps']), $record['commit'], $packageSteps === [] ? null : 'Add --packages to take back the ones that can be.');
+            return self::FAILURE;
         }
 
         if ($steps === []) {
-            $this->line("The sync of {$record['started_at']} changed nothing that can be put back.");
+            $this->line($undone === [] ? "The sync of {$startedAt} changed nothing that can be put back." : "The sync of {$startedAt} was already undone.");
 
             return self::SUCCESS;
         }
 
-        $this->line("To undo the sync of {$record['started_at']}, these will run, in order:");
+        $this->line("To undo the sync of {$startedAt}, these will run, in order:");
 
         foreach ($steps as $step) {
             $this->line('  '.OutputFormatter::escape($step->description));
@@ -83,13 +84,14 @@ final class UndoCommand extends Command
         }
 
         $failures = $this->putBack($steps);
+        $putBack = array_keys(array_diff_key($steps, $failures));
 
-        // A run that put nothing back can be tried again.
-        if (count($failures) < count($steps)) {
-            JsonFile::write($path, [...$record, 'undone_at' => date(DATE_ATOM)]);
+        // Only what was put back is saved, so a step that failed is tried again next time.
+        if ($putBack !== []) {
+            JsonFile::write($path, [...$record, 'undone' => [...$undone, ...$putBack]]);
         }
 
-        $this->line('Put back '.(count($steps) - count($failures)).' of '.count($steps).'.');
+        $this->line('Put back '.count($putBack).' of '.count($steps).'.');
 
         foreach ($failures as $failure) {
             $this->line('  Left alone: '.OutputFormatter::escape($failure));
@@ -125,18 +127,18 @@ final class UndoCommand extends Command
     /**
      * A step that fails doesn't stop the ones after it.
      *
-     * @param  list<Step>  $steps
-     * @return list<string> one line per step that failed, with why
+     * @param  array<string, Step>  $steps
+     * @return array<string, string> one line per step that failed, with why, by the step's key
      */
     private function putBack(array $steps): array
     {
         $failures = [];
 
-        foreach ($steps as $step) {
+        foreach ($steps as $key => $step) {
             try {
                 ($step->run)();
             } catch (RuntimeException|ErrorException $e) {
-                $failures[] = "{$step->description}: {$e->getMessage()}";
+                $failures[$key] = "{$step->description}: {$e->getMessage()}";
             }
         }
 

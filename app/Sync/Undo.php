@@ -27,19 +27,29 @@ final class Undo
 
     /**
      * @param  list<array<string, mixed>>  $logged  a log's steps, in the order they ran
-     * @return list<Step> last change first
+     * @param  list<string>  $undone  keys of the steps an earlier undo put back, which are left out
+     * @return array<string, Step> last change first, by a key to save once the step is put back
      */
-    public function steps(array $logged): array
+    public function steps(array $logged, array $undone = []): array
     {
         $steps = [];
         $restored = [];
 
-        foreach (array_reverse($logged) as $entry) {
+        foreach (array_reverse($logged, preserve_keys: true) as $index => $entry) {
             $effect = $entry['effect'] ?? [];
             $kind = $effect['kind'] ?? null;
+            $key = "file:{$index}";
 
             // One backup covers every edit a run made to a file, and the last edit restores it.
-            if ($kind === 'edit' && isset($restored[$effect['path']])) {
+            if ($kind === 'edit') {
+                if (isset($restored[$effect['path']])) {
+                    continue;
+                }
+
+                $restored[$effect['path']] = true;
+            }
+
+            if (in_array($key, $undone, true)) {
                 continue;
             }
 
@@ -53,12 +63,8 @@ final class Undo
                 default => null,
             };
 
-            if ($kind === 'edit') {
-                $restored[$effect['path']] = true;
-            }
-
             if ($step !== null) {
-                $steps[] = $step;
+                $steps[$key] = $step;
             }
         }
 
@@ -70,17 +76,20 @@ final class Undo
      * at the current version, not the one that was removed.
      *
      * @param  list<array<string, mixed>>  $logged
-     * @return list<Step> last command first
+     * @param  list<string>  $undone  as for steps()
+     * @return array<string, Step> last command first, keyed like steps()
      */
-    public function packageSteps(array $logged): array
+    public function packageSteps(array $logged, array $undone = []): array
     {
         $steps = [];
 
-        foreach (array_reverse($logged) as $entry) {
+        foreach (array_reverse($logged, preserve_keys: true) as $index => $entry) {
             $effect = $entry['effect'] ?? [];
 
-            foreach ($effect['undo'] ?? [] as $command) {
-                $steps[] = $this->commandStep($command, $effect['environment'] ?? []);
+            foreach ($effect['undo'] ?? [] as $number => $command) {
+                if (! in_array("package:{$index}:{$number}", $undone, true)) {
+                    $steps["package:{$index}:{$number}"] = $this->commandStep($command, $effect['environment'] ?? []);
+                }
             }
         }
 
@@ -89,14 +98,18 @@ final class Undo
 
     /**
      * @param  list<array<string, mixed>>  $logged
-     * @return list<string> every command the sync ran
+     * @param  list<string>  $undone  as for steps()
+     * @return list<string> every command the sync ran, except one an earlier --packages took back
      */
-    public function commands(array $logged): array
+    public function commands(array $logged, array $undone = []): array
     {
-        return array_map(
-            fn (array $entry) => Step::commandLine($entry['effect']['command']),
-            $this->commandEntries($logged),
-        );
+        $kept = array_filter($this->commandEntries($logged), function (array $entry, int $index) use ($undone) {
+            $keys = array_map(fn (int $number) => "package:{$index}:{$number}", array_keys($entry['effect']['undo'] ?? []));
+
+            return $keys === [] || array_diff($keys, $undone) !== [];
+        }, ARRAY_FILTER_USE_BOTH);
+
+        return array_map(fn (array $entry) => Step::commandLine($entry['effect']['command']), array_values($kept));
     }
 
     /**
@@ -113,11 +126,11 @@ final class Undo
 
     /**
      * @param  list<array<string, mixed>>  $logged
-     * @return list<array<string, mixed>>
+     * @return array<int, array<string, mixed>> by their index in $logged
      */
     private function commandEntries(array $logged): array
     {
-        return array_values(array_filter($logged, fn (array $entry) => ($entry['effect']['kind'] ?? null) === 'command'));
+        return array_filter($logged, fn (array $entry) => ($entry['effect']['kind'] ?? null) === 'command');
     }
 
     /**

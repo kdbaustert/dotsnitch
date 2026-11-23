@@ -64,7 +64,7 @@ it('restores an edited file from its backup and removes one the sync created', f
 
     expect(file_get_contents($brewfile))->toBe("brew \"mpv\"\n")
         ->and(file_exists($overlay))->toBeFalse()
-        ->and(JsonFile::read($record))->toHaveKey('undone_at');
+        ->and(JsonFile::read($record)['undone'])->toBe(['file:2', 'file:1']);
 });
 
 it('leaves a file that changed since the sync, and fails', function () {
@@ -79,7 +79,37 @@ it('leaves a file that changed since the sync, and fails', function () {
         ->assertExitCode(1);
 
     expect(file_get_contents($brewfile))->toBe("brew \"edited-by-hand\"\n")
-        ->and(JsonFile::read($record))->not->toHaveKey('undone_at');
+        ->and(JsonFile::read($record))->not->toHaveKey('undone');
+});
+
+it('tries only what failed when run again', function () {
+    $kept = "{$this->dir}/.kept";
+    $moved = "{$this->dir}/.moved";
+    symlink('/a', $kept);
+    symlink('/somewhere/else', $moved);
+    $record = syncRecord([
+        ['kind' => 'link', 'target' => $kept, 'source' => '/a'],
+        ['kind' => 'link', 'target' => $moved, 'source' => '/b'],
+    ]);
+
+    $this->artisan('undo')
+        ->expectsConfirmation('Undo these changes?', 'yes')
+        ->expectsOutputToContain('Put back 1 of 2.')
+        ->assertExitCode(1);
+
+    unlink($moved);
+    symlink('/b', $moved);
+
+    $this->artisan('undo')
+        ->expectsOutputToContain("rm {$moved}")
+        ->doesntExpectOutputToContain("rm {$kept}")
+        ->expectsConfirmation('Undo these changes?', 'yes')
+        ->expectsOutputToContain('Put back 1 of 1.')
+        ->assertExitCode(0);
+
+    expect(is_link($kept))->toBeFalse()
+        ->and(is_link($moved))->toBeFalse()
+        ->and(JsonFile::read($record)['undone'])->toBe(['file:0', 'file:1']);
 });
 
 it('takes a back-up-and-link apart in reverse: the link goes, then the file comes back', function () {
@@ -181,6 +211,42 @@ it('takes installs and uninstalls back with --packages, last command first', fun
     expect($this->shell->ran())->toBe([['npm', 'i', '-g', 'serve'], ['brew', 'uninstall', '--formula', 'mpv']])
         ->and($this->shell->environmentOf(['brew', 'uninstall', '--formula', 'mpv']))->toBe($environment);
 });
+
+it('takes packages back with --packages after the files were undone without it', function () {
+    $target = "{$this->dir}/.zshrc";
+    symlink('/a', $target);
+    syncRecord([
+        ['kind' => 'link', 'target' => $target, 'source' => '/a'],
+        ['kind' => 'command', 'command' => ['brew', 'install', '--formula', 'mpv'], 'undo' => [['brew', 'uninstall', '--formula', 'mpv']], 'environment' => []],
+    ]);
+    $this->shell->expect(['brew', 'uninstall', '--formula', 'mpv']);
+
+    $this->artisan('undo')->expectsConfirmation('Undo these changes?', 'yes')->assertExitCode(0);
+    $this->artisan('undo --packages')
+        ->doesntExpectOutputToContain("rm {$target}")
+        ->expectsOutputToContain('brew uninstall --formula mpv')
+        ->expectsConfirmation('Undo these changes?', 'yes')
+        ->expectsOutputToContain('Put back 1 of 1.')
+        ->assertExitCode(0);
+    $this->artisan('undo')
+        ->doesntExpectOutputToContain('These ran and stay as they are:')
+        ->expectsOutputToContain('was already undone')
+        ->assertExitCode(0);
+
+    expect($this->shell->ran())->toBe([['brew', 'uninstall', '--formula', 'mpv']]);
+});
+
+it('fails on a record that is missing what undo needs', function (array $record) {
+    $path = "{$this->dir}/state/syncs/2026-11-22T090000.json";
+    JsonFile::write($path, $record);
+
+    $this->artisan('undo')->expectsOutputToContain("{$path} isn't a sync record dotsnitch can read.")->assertExitCode(1);
+})->with([
+    'no steps' => [['started_at' => '2026-11-22T09:00:00+00:00', 'commit' => null]],
+    'a link with no source' => [['started_at' => '2026-11-22T09:00:00+00:00', 'steps' => [['effect' => ['kind' => 'link', 'target' => '/x']]], 'commit' => null]],
+    'a start time that is a list' => [['started_at' => [], 'steps' => [], 'commit' => null]],
+    'a commit that is a string' => [['started_at' => '2026-11-22T09:00:00+00:00', 'steps' => [], 'commit' => 'abc']],
+]);
 
 it('reports a package command that fails, and carries on with the rest', function () {
     syncRecord([
