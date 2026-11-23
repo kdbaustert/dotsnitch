@@ -27,6 +27,8 @@ final class ManifestEditor
     /** @var array<string, ?string> the backup copy of each file edit() has changed, null for one it created */
     private array $copies = [];
 
+    private bool $oldRunsDropped = false;
+
     /**
      * @param  string  $backups  this run's folder, such as ~/.local/state/dotsnitch/backups/2026-11-21-093000; created on the first backup
      */
@@ -144,9 +146,15 @@ final class ManifestEditor
     /**
      * Deletes the oldest runs' folders next to this one, leaving the newest RUNS_KEPT. Only
      * folders named like a run's start time count. One that can't be read or deleted is left.
+     * Runs once per editor, on its first backup.
      */
     private function dropOldRuns(): void
     {
+        if ($this->oldRunsDropped) {
+            return;
+        }
+
+        $this->oldRunsDropped = true;
         $runs = array_filter(
             glob(dirname($this->backups).'/*', GLOB_ONLYDIR) ?: [],
             fn (string $run) => preg_match('/^\d{4}-\d{2}-\d{2}-\d{6}$/', basename($run)) === 1,

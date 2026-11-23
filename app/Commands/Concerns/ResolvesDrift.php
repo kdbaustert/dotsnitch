@@ -93,8 +93,9 @@ trait ResolvesDrift
 
         $this->showSteps($confirmed);
 
+        // A change that couldn't be planned still fails the run after a no.
         if (! confirm('Apply these changes?', default: true)) {
-            return Command::SUCCESS;
+            return $this->failureReport();
         }
 
         $applied = $this->apply($confirmed);

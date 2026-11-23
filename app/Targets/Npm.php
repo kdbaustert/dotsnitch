@@ -99,7 +99,11 @@ final class Npm extends PackageManagerTarget implements ListsOutdated, SharesMan
      */
     public function outdated(): array
     {
-        $listed = $this->json([$this->binary('npm'), 'outdated', '-g', '--json']);
+        // One entry with no latest version would otherwise fail the whole list.
+        $listed = array_filter(
+            $this->json([$this->binary('npm'), 'outdated', '-g', '--json']),
+            fn (mixed $entry) => is_string($entry['latest'] ?? null),
+        );
 
         return array_map(
             fn (array $entry, string $name) => ['package' => new Package($name, 'package', $entry['current'] ?? null), 'latest' => $entry['latest']],

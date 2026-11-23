@@ -667,6 +667,16 @@ it('lists outdated npm globals, which npm reports with exit code 1', function ()
     expect([$entry['package']->key(), $entry['package']->version, $entry['latest']])->toBe(['package:typescript', '5.9.2', '6.0.1']);
 });
 
+it('leaves out an npm or pnpm global with no latest version, and lists the rest', function (string $class, array $command) {
+    $mac = new GlobalsMac;
+    $mac->shell->expect([$mac->bin($command[0]), ...array_slice($command, 1)], '{"private-tool": {"current": "1.0.0"}, "typescript": {"current": "5.9.2", "latest": "6.0.1"}}', exitCode: 1);
+
+    expect(outdatedRows((new $class($mac->shell, $mac->paths, $mac->editor))->outdated()))->toBe([['package:typescript', '5.9.2', '6.0.1']]);
+})->with([
+    'npm' => [Npm::class, ['npm', 'outdated', '-g', '--json']],
+    'pnpm' => [Pnpm::class, ['pnpm', 'outdated', '-g', '--format', 'json']],
+]);
+
 it('lists outdated Composer globals, and takes the [] Composer prints for none', function () {
     $mac = new GlobalsMac;
     $composer = new Composer($mac->shell, $mac->paths, $mac->editor);

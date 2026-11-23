@@ -87,8 +87,8 @@ final class BrewfileEdit extends LineBasedEdit
 
     /**
      * Captures the indent, the space after the directive, and the quote. Tap names, extension ids
-     * and uv tool names are case-insensitive, so the match is too. A uv name also matches with _
-     * or . where the package has -, the way pip compares names.
+     * and uv tool names are case-insensitive, so the match is too. In a uv name any run of -, _
+     * and . matches any other, the way pip compares names.
      */
     private function patternFor(Package $package): string
     {
@@ -97,11 +97,9 @@ final class BrewfileEdit extends LineBasedEdit
         }
 
         $directive = $this->directiveOf($package);
-        $name = preg_quote($package->name, '/');
-
-        if ($directive === 'uv') {
-            $name = str_replace('\-', '[-_.]+', $name);
-        }
+        $name = $directive === 'uv'
+            ? implode('[-_.]+', array_map(fn (string $part) => preg_quote($part, '/'), preg_split('/[-_.]+/', $package->name)))
+            : preg_quote($package->name, '/');
 
         $flags = in_array($directive, ['tap', 'vscode', 'uv'], true) ? 'i' : '';
 

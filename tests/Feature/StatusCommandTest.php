@@ -10,6 +10,11 @@ use App\Sync\ReportStore;
 use App\Targets\Homebrew;
 use App\Targets\Symlinks;
 use Illuminate\Support\Facades\Artisan;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\Output\ConsoleOutputInterface;
+use Symfony\Component\Console\Output\ConsoleSectionOutput;
+use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Output\StreamOutput;
 use Tests\Fakes\FakeShell;
 
 beforeEach(function () {
@@ -169,6 +174,44 @@ it('skips the scan while another status holds the lock', function () {
         ->assertExitCode(0);
 
     expect(app(ReportStore::class)->latest())->toBeNull();
+});
+
+it('says the lock is taken on stderr, so --json leaves stdout empty', function () {
+    $other = new StatusLock("{$this->dir}/state/".StatusLock::FILE);
+    expect($other->acquire())->toBeTrue();
+    // A console output with its own stderr, the way a terminal run gets one.
+    $stdout = new class(fopen('php://memory', 'w+')) extends StreamOutput implements ConsoleOutputInterface
+    {
+        private OutputInterface $stderr;
+
+        public function __construct($stream)
+        {
+            parent::__construct($stream);
+            $this->stderr = new BufferedOutput;
+        }
+
+        public function getErrorOutput(): OutputInterface
+        {
+            return $this->stderr;
+        }
+
+        public function setErrorOutput(OutputInterface $error): void
+        {
+            $this->stderr = $error;
+        }
+
+        public function section(): ConsoleSectionOutput
+        {
+            throw new LogicException('status writes no sections');
+        }
+    };
+
+    $exit = Artisan::call('status', ['--repo' => "{$this->dir}/repo", '--json' => true], $stdout);
+    rewind($stdout->getStream());
+
+    expect($exit)->toBe(1)
+        ->and(stream_get_contents($stdout->getStream()))->toBe('')
+        ->and($stdout->getErrorOutput()->fetch())->toContain('Another dotsnitch status or sync is already running.');
 });
 
 it('prints the scan as JSON and nothing else with --json', function () {

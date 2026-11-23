@@ -245,6 +245,28 @@ it('keeps a choice for a package when its other item is skipped', function () {
     expect(file_get_contents("{$this->dir}/repo/Brewfile"))->toBe("brew \"jq\"\n");
 });
 
+it('still reports a change it could not plan when the rest are turned down', function () {
+    onlyOtherCheck();
+    $third = fakeTarget('third', fails: false);
+    $third->kinds = [DriftKind::Missing];
+    $third->installPlanError = 'no bottle for this macOS';
+    $this->app->instance('third-target', $third);
+    $this->app->tag(['third-target'], 'sync-targets');
+    answerWithQuestions();
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other,third'])
+        ->expectsQuestion('How do you want to resolve it?', 'each')
+        ->expectsQuestion('Other, untracked: formula:jq', 'add')
+        ->expectsQuestion('Third, not installed: formula:jq', 'install')
+        ->expectsQuestion('Add Other items to which file?', 'Brewfile')
+        ->expectsConfirmation('Apply these changes?', 'no')
+        ->expectsOutputToContain('1 change failed:')
+        ->expectsOutputToContain('no bottle for this macOS')
+        ->assertExitCode(1);
+
+    expect(file_get_contents("{$this->dir}/repo/Brewfile"))->toBe('');
+});
+
 it('shows the commands before it asks, then how many it applied and where the backups and record are', function () {
     onlyOtherCheck();
     file_put_contents("{$this->dir}/repo/Brewfile", "brew \"mpv\"\n");

@@ -157,6 +157,22 @@ it('keeps the newest 30 runs\' backups and deletes the older ones', function () 
         ->and(file_get_contents($outside))->toBe('linked to');
 });
 
+it('drops old runs only on the first backup of a run', function () {
+    foreach (range(1, 30) as $day) {
+        mkdir(sprintf('%s/runs/2026-10-%02d-093000', $this->dir, $day), recursive: true);
+    }
+
+    file_put_contents("{$this->dir}/repo/.zshenv", 'old');
+    file_put_contents("{$this->dir}/repo/.vimrc", 'old');
+    $editor = new ManifestEditor("{$this->dir}/runs/2026-11-01-093000");
+    $editor->edit("{$this->dir}/repo/.zshenv", fn () => 'new');
+    mkdir("{$this->dir}/runs/2026-09-01-093000");
+    $editor->edit("{$this->dir}/repo/.vimrc", fn () => 'new');
+
+    expect(file_exists("{$this->dir}/runs/2026-10-01-093000"))->toBeFalse()
+        ->and(file_exists("{$this->dir}/runs/2026-09-01-093000"))->toBeTrue();
+});
+
 it("still backs up when an old run's folder can't be opened", function () {
     foreach (range(1, 31) as $day) {
         mkdir(sprintf('%s/runs/2026-10-%02d-093000', $this->dir, $day), recursive: true);

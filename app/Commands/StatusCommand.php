@@ -59,7 +59,6 @@ final class StatusCommand extends Command
      * next, and with --notify posts what's new. With --json the scan is all it prints.
      *
      * @return int failure when a check couldn't finish, or --notify or --json couldn't get the lock. Drift
-
      *             alone isn't a failure, so a schedule's log doesn't show every day as an error.
      *
      * @throws InvalidArgumentException when --checks names a check that doesn't exist or can't run
@@ -75,7 +74,8 @@ final class StatusCommand extends Command
 
         // The daily run waits out a prompt's refresh instead of skipping the day.
         if (! $lock->acquire($notify ? self::NOTIFY_WAIT_SECONDS : 0)) {
-            $this->line('Another dotsnitch status or sync is already running.');
+            // On stderr, so a script reading --json doesn't take it for the JSON.
+            $this->output->getErrorStyle()->writeln('Another dotsnitch status or sync is already running.');
 
             // A daily run that waited and still couldn't scan shows as a failed run in launchd,
             // and a script reading --json gets no JSON.

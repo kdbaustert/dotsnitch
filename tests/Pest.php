@@ -48,6 +48,9 @@ function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarge
         /** Set it to make the uninstall step fail with this message. */
         public ?string $uninstallError = null;
 
+        /** Set it to make planning the install fail with this message. */
+        public ?string $installPlanError = null;
+
         /**
          * @param  bool  $fails  true makes scan() throw
          */
@@ -130,7 +133,7 @@ function fakeTarget(string $key, bool $fails, bool $available = true): SyncTarge
                     "Add formula:{$this->package} to ".basename($decision->manifests[0]),
                     fn () => app(ManifestEditor::class)->edit($decision->manifests[0], fn (string $contents) => $contents."brew \"jq\"\n"),
                 )],
-                Action::Install => [new Step("brew install --formula {$this->package}", function () {
+                Action::Install => $this->installPlanError !== null ? throw new RuntimeException($this->installPlanError) : [new Step("brew install --formula {$this->package}", function () {
                     $this->ran[] = "install {$this->package}";
 
                     return ['kind' => 'command', 'command' => ['brew', 'install', '--formula', $this->package]];
