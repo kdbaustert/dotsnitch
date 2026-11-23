@@ -131,3 +131,47 @@ it('numbers a backup instead of replacing one already there', function () {
         ->and(file_get_contents("{$this->dir}/backups{$zshrc}"))->toBe('old')
         ->and(file_get_contents("{$this->dir}/backups{$zshrc}.1"))->toBe('edited');
 });
+
+it('keeps the newest 30 runs\' backups and deletes the older ones', function () {
+    $outside = "{$this->dir}/repo/.zshrc";
+    file_put_contents($outside, 'linked to');
+
+    foreach (range(1, 31) as $day) {
+        mkdir(sprintf('%s/runs/2026-10-%02d-093000', $this->dir, $day), recursive: true);
+    }
+
+    mkdir("{$this->dir}/runs/2026-10-01-093000/Users/me", recursive: true);
+    file_put_contents("{$this->dir}/runs/2026-10-01-093000/Users/me/.vimrc", 'old');
+    symlink($outside, "{$this->dir}/runs/2026-10-01-093000/Users/me/.zshrc");
+    mkdir("{$this->dir}/runs/notes");
+
+    $zshenv = "{$this->dir}/repo/.zshenv";
+    file_put_contents($zshenv, 'old');
+    (new ManifestEditor("{$this->dir}/runs/2026-11-01-093000"))->edit($zshenv, fn () => 'new');
+
+    expect(file_exists("{$this->dir}/runs/2026-10-01-093000"))->toBeFalse()
+        ->and(file_exists("{$this->dir}/runs/2026-10-02-093000"))->toBeFalse()
+        ->and(file_exists("{$this->dir}/runs/2026-10-03-093000"))->toBeTrue()
+        ->and(file_get_contents("{$this->dir}/runs/2026-11-01-093000{$zshenv}"))->toBe('old')
+        ->and(file_exists("{$this->dir}/runs/notes"))->toBeTrue()
+        ->and(file_get_contents($outside))->toBe('linked to');
+});
+
+it("still backs up when an old run's folder can't be opened", function () {
+    foreach (range(1, 31) as $day) {
+        mkdir(sprintf('%s/runs/2026-10-%02d-093000', $this->dir, $day), recursive: true);
+    }
+
+    $locked = "{$this->dir}/runs/2026-10-01-093000/Users";
+    mkdir($locked, 0000);
+
+    $zshenv = "{$this->dir}/repo/.zshenv";
+    file_put_contents($zshenv, 'old');
+    (new ManifestEditor("{$this->dir}/runs/2026-11-01-093000"))->edit($zshenv, fn () => 'new');
+    chmod($locked, 0755);
+
+    expect(file_get_contents($zshenv))->toBe('new')
+        ->and(file_get_contents("{$this->dir}/runs/2026-11-01-093000{$zshenv}"))->toBe('old')
+        ->and(file_exists($locked))->toBeTrue()
+        ->and(file_exists("{$this->dir}/runs/2026-10-02-093000"))->toBeFalse();
+});

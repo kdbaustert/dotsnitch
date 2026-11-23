@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Targets;
 
+use App\Contracts\ListsOutdated;
 use App\Contracts\ManifestFormat;
 use App\Contracts\Shell;
 use App\Data\Package;
@@ -16,8 +17,11 @@ use RuntimeException;
 /**
  * GitHub CLI extensions, by owner/repo.
  */
-final class Gh extends PackageManagerTarget
+final class Gh extends PackageManagerTarget implements ListsOutdated
 {
+    /** A dry-run upgrade's line for an extension with a newer version, named without its gh- prefix. */
+    private const UPGRADE_LINE = '/^\[(.+)\]: would have upgraded from (\S+) to (\S+)$/';
+
     private readonly GhSpec $spec;
 
     /**
@@ -86,6 +90,27 @@ final class Gh extends PackageManagerTarget
                 $version === '' ? null : $version,
             );
         });
+    }
+
+    /**
+     * gh has no outdated command, so this reads a dry run of upgrading them all. A pinned or
+     * local extension is never in it.
+     *
+     * @throws RuntimeException when either gh command fails
+     */
+    public function outdated(): array
+    {
+        $byDirectory = $this->installed()->keyBy(fn (Package $package) => basename($package->name));
+        $outdated = [];
+
+        foreach ($this->lines([$this->binary('gh'), 'extension', 'upgrade', '--all', '--dry-run']) as $line) {
+            if (preg_match(self::UPGRADE_LINE, $line, $match)) {
+                $name = $byDirectory->get("gh-{$match[1]}")->name ?? "gh-{$match[1]}";
+                $outdated[] = ['package' => new Package($name, 'extension', $match[2]), 'latest' => $match[3]];
+            }
+        }
+
+        return $outdated;
     }
 
     /**

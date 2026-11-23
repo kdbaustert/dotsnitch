@@ -149,3 +149,10 @@ it('puts a first vscode line after everything else', function () {
     expect($edit->contents())->toBe("brew \"jq\"\nmas \"Xcode\", id: 497799835\nvscode \"editorconfig.editorconfig\"\n")
         ->and($edit->lists(new Package('EditorConfig.EditorConfig', 'extension')))->toBeTrue();
 });
+
+it('finds a uv line whatever the case and separators of its name', function () {
+    $edit = new BrewfileEdit("uv \"My_Tool\"\nnpm \"my-tool\"\n", packageDirective: 'uv');
+
+    expect($edit->remove(new Package('my-tool', 'package')))->toBeTrue()
+        ->and($edit->contents())->toBe("npm \"my-tool\"\n");
+});

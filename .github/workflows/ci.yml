@@ -29,6 +29,7 @@ jobs:
           coverage: none
       - run: composer install --no-interaction --no-progress
       - run: composer lint
+      - run: composer analyse
       - run: composer test
 
   build:

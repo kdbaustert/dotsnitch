@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Targets;
 
+use App\Contracts\ListsOutdated;
 use App\Contracts\ManifestFormat;
+use App\Contracts\SharesManifest;
 use App\Contracts\Shell;
 use App\Data\Package;
+use App\Manifests\BrewfileLineFormat;
 use App\Manifests\CargoSpec;
 use App\Support\ManifestEditor;
 use App\Support\PathResolver;
@@ -16,10 +19,16 @@ use RuntimeException;
 /**
  * Binaries installed with `cargo install`.
  */
-final class Cargo extends PackageManagerTarget
+final class Cargo extends PackageManagerTarget implements ListsOutdated, SharesManifest
 {
     /** "ripgrep v14.1.1:", with " (source)" before the colon when it didn't come from crates.io. */
     private const CRATE_LINE = '/^(\S+) v(\S+?)(?: \(.+\))?:$/';
+
+    /** The same line for a crate that did come from crates.io. */
+    private const REGISTRY_CRATE_LINE = '/^(\S+) v(\S+):$/';
+
+    /** cargo search's line for a crate: ripgrep = "14.1.1", then a comment. */
+    private const SEARCH_LINE = '/^(\S+) = "([^"]+)"/';
 
     private readonly CargoSpec $spec;
 
@@ -58,19 +67,20 @@ final class Cargo extends PackageManagerTarget
     }
 
     /**
-     * Plain lists, or a cargo.sh whose bash array holds the names.
+     * Plain lists, a cargo.sh whose bash array holds the names, or the cargo lines of a Brewfile.
      */
     public function manifestPatterns(): array
     {
-        return ['cargo.txt', 'Cargofile', 'cargo.sh'];
+        return ['cargo.txt', 'Cargofile', 'cargo.sh', 'Brewfile', '.Brewfile'];
     }
 
     /**
-     * cargo.sh or a plain list. Both hold crates, pinned as name@version if at all.
+     * cargo.sh and a plain list hold crates, pinned as name@version if at all. A Brewfile's cargo
+     * lines never pin.
      */
     protected function format(string $manifest): ManifestFormat
     {
-        return $this->scriptOrList($manifest, $this->spec);
+        return BrewfileLineFormat::isBrewfile($manifest) ? new BrewfileLineFormat('cargo') : $this->scriptOrList($manifest, $this->spec);
     }
 
     /**
@@ -84,6 +94,32 @@ final class Cargo extends PackageManagerTarget
             ->map(fn (string $line) => preg_match(self::CRATE_LINE, $line, $match) ? new Package($match[1], 'crate', $match[2]) : null)
             ->filter()
             ->values();
+    }
+
+    /**
+     * Cargo has no outdated command for installed binaries, so this searches crates.io once per
+     * crate. A crate installed from git or a path isn't looked up, since crates.io's version
+     * says nothing about it.
+     *
+     * @throws RuntimeException when cargo install --list or a search fails
+     */
+    public function outdated(): array
+    {
+        $outdated = [];
+
+        foreach ($this->lines([$this->binary('cargo'), 'install', '--list']) as $line) {
+            if (! preg_match(self::REGISTRY_CRATE_LINE, $line, $crate)) {
+                continue;
+            }
+
+            foreach ($this->lines([$this->binary('cargo'), 'search', '--limit', '1', $crate[1]]) as $found) {
+                if (preg_match(self::SEARCH_LINE, $found, $match) && $match[1] === $crate[1] && version_compare($match[2], $crate[2], '>')) {
+                    $outdated[] = ['package' => new Package($crate[1], 'crate', $crate[2]), 'latest' => $match[2]];
+                }
+            }
+        }
+
+        return $outdated;
     }
 
     /**

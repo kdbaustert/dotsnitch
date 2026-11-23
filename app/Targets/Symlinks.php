@@ -341,6 +341,8 @@ final class Symlinks implements ScansWholeRepo, ShowsDiff, SyncTarget
         }
 
         $destination = str_starts_with($pointedTo, '/') ? $pointedTo : dirname($link->target).'/'.$pointedTo;
+        // A ../ left in the path would end up in the backup's path too, which then can't be created.
+        $destination = (realpath(dirname($destination)) ?: dirname($destination)).'/'.basename($destination);
 
         return file_exists($destination) ? [$this->backUpStep($destination)] : [];
     }

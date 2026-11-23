@@ -7,6 +7,7 @@ namespace App\Commands;
 use App\Commands\Concerns\ChoosesHomebrew;
 use App\Contracts\ListsOutdated;
 use App\Support\PathResolver;
+use ErrorException;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
 
@@ -19,13 +20,14 @@ final class OutdatedCommand extends Command
 
     protected $signature = 'outdated';
 
-    protected $description = 'List the installed Homebrew, npm and Composer packages that have a newer version';
+    protected $description = 'List the installed packages that have a newer version';
 
     /**
      * Asks each package manager that's installed and can say. It only lists: upgrading is left to
      * the package manager, and none of this counts as out of sync.
      *
-     * @return int failure when a package manager couldn't be asked; the others are still listed
+     * @return int failure when a package manager couldn't be asked or printed a list that can't be
+     *             read; the others are still listed
      */
     public function handle(PathResolver $paths): int
     {
@@ -40,7 +42,7 @@ final class OutdatedCommand extends Command
 
             try {
                 $outdated = spin($target->outdated(...), "Asking {$target->label()}…");
-            } catch (RuntimeException $e) {
+            } catch (RuntimeException|ErrorException $e) {
                 $this->error("{$target->label()}: {$e->getMessage()}");
                 $failed = true;
 

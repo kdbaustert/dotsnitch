@@ -19,6 +19,7 @@ use App\Sync\IgnoreList;
 use App\Sync\ReportStore;
 use App\Sync\SavedScan;
 use ErrorException;
+use Fiber;
 use Laravel\Prompts\Support\Logger;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
@@ -46,6 +47,9 @@ trait ScansChecks
 
     /** Spaces between two checks listed side by side. */
     private const COLUMN_GAP = 4;
+
+    /** How long scanEach() waits between looks at the commands its scans are running. */
+    private const SCAN_POLL_MICROSECONDS = 2000;
 
     /** @var array<string, Check> the checks that ran, by key */
     private array $checksByKey = [];
@@ -158,21 +162,61 @@ trait ScansChecks
     }
 
     /**
-     * Scans each check in turn and remembers them for report() and resolving.
+     * Scans the checks side by side and remembers them for report() and resolving. Each scan is a
+     * fiber that steps aside while one of its commands runs (see ProcessShell), so the time spent
+     * waiting on brew, npm and the rest overlaps. The checks still show one at a time, in order.
      *
      * @param  list<Check>  $selected
      * @return array<string, DriftReport|RuntimeException> keyed by check
      */
     private function scanEach(array $selected): array
     {
+        $scans = [];
+        $lines = [];
+
+        foreach ($selected as $check) {
+            $key = $check->key();
+            $this->checksByKey[$key] = $check;
+            $lines[$key] = [];
+            $scans[$key] = new Fiber(fn () => $this->outcomeOf($check, function (string $line) use (&$lines, $key) {
+                $lines[$key][] = $line;
+            }));
+            $scans[$key]->start();
+        }
+
         $reports = [];
 
         foreach ($selected as $check) {
-            $this->checksByKey[$check->key()] = $check;
-            $reports[$check->key()] = $this->scan($check);
+            $key = $check->key();
+            $reports[$key] = task($check->target->label(), function (Logger $logger) use ($key, $scans, &$lines) {
+                do {
+                    $this->advance($scans);
+                    array_map($logger->line(...), array_splice($lines[$key], 0));
+                } while (! $scans[$key]->isTerminated());
+
+                $this->logOutcome($logger, $scans[$key]->getReturn());
+
+                return $scans[$key]->getReturn();
+            }, keepSummary: true);
         }
 
         return $reports;
+    }
+
+    /**
+     * Lets every scan that's waiting on a command look at it once, then waits a moment itself.
+     *
+     * @param  array<string, Fiber<null, null, DriftReport|RuntimeException, null>>  $scans
+     */
+    private function advance(array $scans): void
+    {
+        foreach ($scans as $scan) {
+            if ($scan->isSuspended()) {
+                $scan->resume();
+            }
+        }
+
+        usleep(self::SCAN_POLL_MICROSECONDS);
     }
 
     /**
@@ -184,27 +228,38 @@ trait ScansChecks
      */
     private function scan(Check $check): DriftReport|RuntimeException
     {
-        $ignores = $this->laravel->make(IgnoreList::class);
+        return task($check->target->label(), function (Logger $logger) use ($check) {
+            $outcome = $this->outcomeOf($check, $logger->line(...));
+            $this->logOutcome($logger, $outcome);
 
-        return task($check->target->label(), function (Logger $logger) use ($check, $ignores) {
-            try {
-                $report = $ignores->apply($check->target->scan(
-                    array_map(fn (string $file) => "{$this->root}/{$file}", $check->manifests),
-                    $logger->line(...),
-                ));
-            } catch (RuntimeException|ErrorException $e) {
-                $logger->error("Check failed: {$e->getMessage()}");
-
-                // Laravel throws a PHP warning, such as a manifest that can't be read, as an ErrorException.
-                return $e instanceof RuntimeException ? $e : new RuntimeException($e->getMessage(), previous: $e);
-            }
-
-            $report->isInSync()
-                ? $logger->success($this->statusOf($report))
-                : $logger->warning(count($report->items).' out of sync'.$this->ignoredSuffix($report->ignored));
-
-            return $report;
+            return $outcome;
         }, keepSummary: true);
+    }
+
+    /**
+     * @param  callable(string): void  $log  takes each progress line
+     * @return DriftReport|RuntimeException the error when the check couldn't finish
+     */
+    private function outcomeOf(Check $check, callable $log): DriftReport|RuntimeException
+    {
+        try {
+            return $this->laravel->make(IgnoreList::class)->apply($check->target->scan(
+                array_map(fn (string $file) => "{$this->root}/{$file}", $check->manifests),
+                $log,
+            ));
+        } catch (RuntimeException|ErrorException $e) {
+            // Laravel throws a PHP warning, such as a manifest that can't be read, as an ErrorException.
+            return $e instanceof RuntimeException ? $e : new RuntimeException($e->getMessage(), previous: $e);
+        }
+    }
+
+    private function logOutcome(Logger $logger, DriftReport|RuntimeException $outcome): void
+    {
+        match (true) {
+            $outcome instanceof RuntimeException => $logger->error("Check failed: {$outcome->getMessage()}"),
+            $outcome->isInSync() => $logger->success($this->statusOf($outcome)),
+            default => $logger->warning(count($outcome->items).' out of sync'.$this->ignoredSuffix($outcome->ignored)),
+        };
     }
 
     /**

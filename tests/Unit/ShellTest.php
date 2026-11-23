@@ -26,6 +26,24 @@ it('passes the given environment to the process', function () {
     expect($result->output)->toBe('yes');
 });
 
+it('steps aside inside a fiber, so two commands wait at the same time', function () {
+    $shell = new ProcessShell;
+    $fibers = array_map(
+        fn (string $word) => new Fiber(fn () => $shell->run(['sh', '-c', "sleep 0.4; printf {$word}"])->output),
+        ['one', 'two'],
+    );
+    $started = microtime(true);
+    array_map(fn (Fiber $fiber) => $fiber->start(), $fibers);
+
+    while (array_filter($fibers, fn (Fiber $fiber) => ! $fiber->isTerminated()) !== []) {
+        array_map(fn (Fiber $fiber) => $fiber->isSuspended() && $fiber->resume(), $fibers);
+        usleep(2000);
+    }
+
+    expect(array_map(fn (Fiber $fiber) => $fiber->getReturn(), $fibers))->toBe(['one', 'two'])
+        ->and(microtime(true) - $started)->toBeLessThan(0.7);
+});
+
 it('replays canned results and records what ran', function () {
     $shell = (new FakeShell)
         ->expect(['brew', '--prefix'], "/opt/homebrew\n")

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Targets;
 
+use App\Contracts\ListsOutdated;
 use App\Contracts\ManifestFormat;
 use App\Contracts\SharesManifest;
 use App\Data\Package;
@@ -19,10 +20,13 @@ use RuntimeException;
  * Mac App Store apps, by id. Ids don't say much in a report, so each item shows the app's name
  * from the manifest or from mas list.
  */
-final class Mas extends PackageManagerTarget implements SharesManifest
+final class Mas extends PackageManagerTarget implements ListsOutdated, SharesManifest
 {
     /** mas list's text form: id, name, then the version in parens. */
     private const LIST_LINE = '/^\s*(\d+)\s+(.+?)\s+\((.+)\)\s*$/';
+
+    /** mas outdated's text form: id, name, then "(installed -> latest)". */
+    private const OUTDATED_LINE = '/^\s*(\d+)\s+(.+?)\s+\((\S+)\s+->\s+(\S+)\)\s*$/';
 
     /** @var array<string, string> app name by id, from the manifests and the last installed() */
     private array $titles = [];
@@ -60,11 +64,6 @@ final class Mas extends PackageManagerTarget implements SharesManifest
         return ['mas.txt', 'Masfile', 'mas.sh', 'Brewfile', '.Brewfile'];
     }
 
-    public function hasEntriesIn(string $path): bool
-    {
-        return ! BrewfileLineFormat::isBrewfile($path) || $this->format($path)->read($path)->isNotEmpty();
-    }
-
     /**
      * Picks up the names next to each id before the scan, so missing apps get one too.
      */
@@ -86,7 +85,7 @@ final class Mas extends PackageManagerTarget implements SharesManifest
     protected function format(string $manifest): ManifestFormat
     {
         return BrewfileLineFormat::isBrewfile($manifest)
-            ? new BrewfileLineFormat('app', $this->titles)
+            ? new BrewfileLineFormat('mas', $this->titles)
             : $this->scriptOrList($manifest, new MasSpec($this->titles));
     }
 
@@ -108,6 +107,24 @@ final class Mas extends PackageManagerTarget implements SharesManifest
         }
 
         return $packages;
+    }
+
+    /**
+     * Goes by the app's name here and not its id, since the list is only read by a person.
+     *
+     * @throws RuntimeException when mas outdated fails
+     */
+    public function outdated(): array
+    {
+        $outdated = [];
+
+        foreach ($this->lines([$this->binary('mas'), 'outdated']) as $line) {
+            if (preg_match(self::OUTDATED_LINE, $line, $match)) {
+                $outdated[] = ['package' => new Package($match[2], 'app', $match[3]), 'latest' => $match[4]];
+            }
+        }
+
+        return $outdated;
     }
 
     /**

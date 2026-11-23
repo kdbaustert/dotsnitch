@@ -6,8 +6,10 @@ namespace App\Targets;
 
 use App\Contracts\ListsOutdated;
 use App\Contracts\ManifestFormat;
+use App\Contracts\SharesManifest;
 use App\Contracts\Shell;
 use App\Data\Package;
+use App\Manifests\BrewfileLineFormat;
 use App\Manifests\JsonRequireFormat;
 use App\Manifests\LineListFormat;
 use App\Manifests\NodeSpec;
@@ -19,7 +21,7 @@ use RuntimeException;
 /**
  * Global npm packages, top level only.
  */
-final class Npm extends PackageManagerTarget implements ListsOutdated
+final class Npm extends PackageManagerTarget implements ListsOutdated, SharesManifest
 {
     private readonly NodeSpec $spec;
 
@@ -58,17 +60,23 @@ final class Npm extends PackageManagerTarget implements ListsOutdated
 
     /**
      * A package.json only counts inside an npm/ folder, so a project's package.json isn't read.
+     * A Brewfile counts for its npm lines.
      */
     public function manifestPatterns(): array
     {
-        return ['npm-global.txt', '.npm-globals', 'npm/package.json'];
+        return ['npm-global.txt', '.npm-globals', 'npm/package.json', 'Brewfile', '.Brewfile'];
     }
 
     /**
-     * A package.json reads its "dependencies"; anything else is a list of names.
+     * A package.json reads its "dependencies" and a Brewfile its npm lines; anything else is a
+     * list of names.
      */
     protected function format(string $manifest): ManifestFormat
     {
+        if (BrewfileLineFormat::isBrewfile($manifest)) {
+            return new BrewfileLineFormat('npm');
+        }
+
         return $this->hasExtension($manifest, 'json')
             ? new JsonRequireFormat('dependencies', $this->spec)
             : new LineListFormat($this->spec);
@@ -93,11 +101,11 @@ final class Npm extends PackageManagerTarget implements ListsOutdated
     {
         $listed = $this->json([$this->binary('npm'), 'outdated', '-g', '--json']);
 
-        return array_values(array_map(
+        return array_map(
             fn (array $entry, string $name) => ['package' => new Package($name, 'package', $entry['current'] ?? null), 'latest' => $entry['latest']],
             $listed,
             array_keys($listed),
-        ));
+        );
     }
 
     /**

@@ -12,13 +12,13 @@ use Illuminate\Support\Facades\Artisan;
 /**
  * As much of a check as `outdated` uses: its label, and what it says is outdated.
  *
- * @param  ?list<array{package: Package, latest: string}>  $outdated  null makes outdated() throw
+ * @param  list<array{package: Package, latest: string}>|Throwable  $outdated  outdated() throws a Throwable
  */
-function outdatedTarget(string $label, ?array $outdated): ListsOutdated
+function outdatedTarget(string $label, array|Throwable $outdated): ListsOutdated
 {
     return new class($label, $outdated) implements ListsOutdated
     {
-        public function __construct(private readonly string $label, private readonly ?array $outdated) {}
+        public function __construct(private readonly string $label, private readonly array|Throwable $outdated) {}
 
         public function label(): string
         {
@@ -32,7 +32,7 @@ function outdatedTarget(string $label, ?array $outdated): ListsOutdated
 
         public function outdated(): array
         {
-            return $this->outdated ?? throw new RuntimeException('npm outdated printed no JSON');
+            return is_array($this->outdated) ? $this->outdated : throw $this->outdated;
         }
     };
 }
@@ -44,7 +44,7 @@ beforeEach(function () {
 
 it('lists what each package manager says is outdated, and carries on past one that fails', function () {
     $this->app->instance(Homebrew::class, outdatedTarget('Brew', [['package' => new Package('jq', 'formula', '1.7'), 'latest' => '1.8.1']]));
-    $this->app->instance(Npm::class, outdatedTarget('Npm', null));
+    $this->app->instance(Npm::class, outdatedTarget('Npm', new RuntimeException('npm outdated printed no JSON')));
     $this->app->instance(Composer::class, outdatedTarget('Composer', []));
 
     $exit = Artisan::call('outdated');
@@ -52,6 +52,20 @@ it('lists what each package manager says is outdated, and carries on past one th
 
     expect($exit)->toBe(1)
         ->and($output)->toContain('Npm: npm outdated printed no JSON')
+        ->and($output)->toMatch('/Brew\s+│\s+jq\s+│\s+1\.7\s+│\s+1\.8\.1/u');
+});
+
+it('carries on past a list it can\'t read', function () {
+    $this->app->instance(Homebrew::class, outdatedTarget('Brew', [['package' => new Package('jq', 'formula', '1.7'), 'latest' => '1.8.1']]));
+    // What Laravel throws for the warning when an entry has no latest version.
+    $this->app->instance(Npm::class, outdatedTarget('Npm', new ErrorException('Undefined array key "latest"')));
+    $this->app->instance(Composer::class, outdatedTarget('Composer', []));
+
+    $exit = Artisan::call('outdated');
+    $output = Artisan::output();
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('Npm: Undefined array key "latest"')
         ->and($output)->toMatch('/Brew\s+│\s+jq\s+│\s+1\.7\s+│\s+1\.8\.1/u');
 });
 

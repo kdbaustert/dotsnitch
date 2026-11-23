@@ -174,6 +174,20 @@ it('adds to a new overlay for this Mac, rescans and saves the report', function 
         ->and(app(ReportStore::class)->latest()->checks)->toBe(['other' => ['other:untracked:formula:jq']]);
 });
 
+it('leaves nothing of its own in the repo after a sync, only the manifest it edited', function () {
+    onlyOtherCheck();
+    answerWithQuestions();
+
+    $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other'])
+        ->expectsQuestion('How do you want to resolve it?', 'review')
+        ->expectsQuestion('Other, untracked: pick the ones to add to dotfiles', ['formula:jq'])
+        ->expectsQuestion('Add Other items to which file?', 'Brewfile')
+        ->expectsConfirmation('Apply these changes?', 'yes')
+        ->assertExitCode(0);
+
+    expect(array_values(array_diff(scandir("{$this->dir}/repo"), ['.', '..'])))->toBe(['Brewfile']);
+});
+
 it('adds to a setup script without offering an overlay, since a new one has no array to add to', function () {
     onlyOtherCheck()->patterns = ['mas.sh'];
     file_put_contents("{$this->dir}/repo/mas.sh", "apps=(\n)\n");

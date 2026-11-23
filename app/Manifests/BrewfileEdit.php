@@ -7,27 +7,32 @@ namespace App\Manifests;
 use App\Data\Package;
 
 /**
- * Line edits on a Brewfile. Only plain `tap`, `brew`, `cask`, `mas` and `vscode` lines are
- * matched, with either quote style and any options or comment after the name. Anything built in
- * Ruby is left to the user.
+ * Line edits on a Brewfile. Only plain `tap`, `brew`, `cask`, `mas`, `vscode`, `cargo`, `uv` and
+ * `npm` lines are matched, with either quote style and any options or comment after the name.
+ * Anything built in Ruby is left to the user.
  *
  * An app's Package name is its App Store id, so a mas line is matched by its id and never by the
  * name in quotes.
  */
 final class BrewfileEdit extends LineBasedEdit
 {
-    /** Package type to its Brewfile directive, in the order the sections usually run. */
-    private const DIRECTIVES = ['tap' => 'tap', 'formula' => 'brew', 'cask' => 'cask', 'app' => 'mas', 'extension' => 'vscode'];
+    /** Package type to its Brewfile directive. uv and npm share the type "package", so that one comes from the constructor. */
+    private const DIRECTIVES = ['tap' => 'tap', 'formula' => 'brew', 'cask' => 'cask', 'app' => 'mas', 'extension' => 'vscode', 'crate' => 'cargo'];
+
+    /** The directives in the order their sections usually run. */
+    private const SECTIONS = ['tap', 'brew', 'cask', 'mas', 'vscode', 'cargo', 'uv', 'npm'];
 
     /** A top-level line of any Brewfile directive, such as `mas "Xcode", id: 497799835`. */
     private const ANY_DIRECTIVE = '/^([a-z_]+)\s+["\']/';
 
     /**
      * @param  array<string, string>  $titles  app name by id, for a new mas line
+     * @param  string  $packageDirective  uv or npm, whichever check's packages are being edited
      */
     public function __construct(
         string $contents,
         private readonly array $titles = [],
+        private readonly string $packageDirective = 'npm',
     ) {
         parent::__construct($contents);
     }
@@ -45,8 +50,8 @@ final class BrewfileEdit extends LineBasedEdit
         // brew bundle installs by the id, so the id stands in for a name nobody knows.
         $line = $package->type === 'app'
             ? 'mas "'.addcslashes($this->titles[$package->name] ?? $package->name, '"\\#').'", id: '.$package->name
-            : self::DIRECTIVES[$package->type].' "'.$package->name.'"';
-        array_splice($this->lines, $this->insertionPoint($package->type), 0, [$line]);
+            : $this->directiveOf($package).' "'.$package->name.'"';
+        array_splice($this->lines, $this->insertionPoint($this->directiveOf($package)), 0, [$line]);
     }
 
     /**
@@ -64,7 +69,7 @@ final class BrewfileEdit extends LineBasedEdit
         foreach ($found as $index) {
             $this->lines[$index] = preg_replace_callback(
                 $this->patternFor($old),
-                fn (array $match) => $match[1].self::DIRECTIVES[$new->type].$match[2].$match[3].$new->name.$match[3],
+                fn (array $match) => $match[1].$this->directiveOf($new).$match[2].$match[3].$new->name.$match[3],
                 $this->lines[$index],
             );
         }
@@ -81,8 +86,9 @@ final class BrewfileEdit extends LineBasedEdit
     }
 
     /**
-     * Captures the indent, the space after the directive, and the quote. Tap names and extension
-     * ids are case-insensitive, so the match is too.
+     * Captures the indent, the space after the directive, and the quote. Tap names, extension ids
+     * and uv tool names are case-insensitive, so the match is too. A uv name also matches with _
+     * or . where the package has -, the way pip compares names.
      */
     private function patternFor(Package $package): string
     {
@@ -90,17 +96,29 @@ final class BrewfileEdit extends LineBasedEdit
             return '/^(\s*)mas(\s+)(["\']).*?\3\s*,\s*id:\s*'.preg_quote($package->name, '/').'\b/';
         }
 
-        $flags = in_array($package->type, ['tap', 'extension'], true) ? 'i' : '';
+        $directive = $this->directiveOf($package);
+        $name = preg_quote($package->name, '/');
 
-        return '/^(\s*)'.self::DIRECTIVES[$package->type].'(\s+)(["\'])'.preg_quote($package->name, '/').'\3/'.$flags;
+        if ($directive === 'uv') {
+            $name = str_replace('\-', '[-_.]+', $name);
+        }
+
+        $flags = in_array($directive, ['tap', 'vscode', 'uv'], true) ? 'i' : '';
+
+        return '/^(\s*)'.$directive.'(\s+)(["\'])'.$name.'\3/'.$flags;
+    }
+
+    private function directiveOf(Package $package): string
+    {
+        return self::DIRECTIVES[$package->type] ?? $this->packageDirective;
     }
 
     /**
      * Only top-level lines count, so a new entry never lands inside an `if` block.
      */
-    private function insertionPoint(string $type): int
+    private function insertionPoint(string $directive): int
     {
-        $order = array_flip(array_keys(self::DIRECTIVES));
+        $order = array_flip(self::SECTIONS);
         $after = null;
         $firstEntry = null;
 
@@ -110,9 +128,8 @@ final class BrewfileEdit extends LineBasedEdit
             }
 
             $firstEntry ??= $index;
-            $lineType = array_search($match[1], self::DIRECTIVES, true);
 
-            if ($lineType !== false && $order[$lineType] <= $order[$type]) {
+            if (isset($order[$match[1]]) && $order[$match[1]] <= $order[$directive]) {
                 $after = $index + 1;
             }
         }

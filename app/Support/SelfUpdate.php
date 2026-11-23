@@ -48,11 +48,27 @@ final class SelfUpdate
             throw new RuntimeException("{$asset} doesn't match its checksum, so nothing was installed.");
         }
 
-        if (! chmod($download, 0755) || ! rename($download, $binary)) {
+        if (! @chmod($download, 0755) || ! @rename($download, $binary)) {
+            @unlink($download);
+
             throw new RuntimeException("Couldn't replace {$binary}.");
         }
 
         return true;
+    }
+
+    /**
+     * True for a beta that came out after the latest full release, which update() would swap for
+     * the older build. A release from before version.txt can't say, so it counts as newer.
+     *
+     * @param  string  $running  this dotsnitch's version, such as v0.2.0-beta.1
+     */
+    public function releaseIsOlderThan(string $running): bool
+    {
+        $result = $this->shell->run(['/usr/bin/curl', '-fsSL', "{$this->releases}/version.txt"], self::DOWNLOAD_TIMEOUT);
+        $release = trim($result->output);
+
+        return $result->successful() && $release !== '' && version_compare(ltrim($release, 'v'), ltrim($running, 'v'), '<');
     }
 
     /**
