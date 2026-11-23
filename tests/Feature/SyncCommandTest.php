@@ -341,7 +341,8 @@ it('offers to commit the manifests it changed when the repo is inside a git chec
     $git = ["{$this->dir}/brew/bin/git", '-C', realpath("{$this->dir}/repo")];
     $shell = (new FakeShell)
         ->expect([...$git, 'rev-parse', '--is-inside-work-tree'], "true\n")
-        ->expect([...$git, 'diff', '--stat', '--', 'Brewfile'], " Brewfile | 1 +\n")
+        ->expect([...$git, 'diff', '--name-only', '--relative', '-z', 'HEAD'])
+        ->expect([...$git, 'status', '--short', '--untracked-files=all', '--', 'Brewfile'], "?? Brewfile\n")
         ->expect([...$git, 'add', '--', 'Brewfile'])
         ->expect([...$git, 'commit', '-m', 'dotsnitch: add jq', '--', 'Brewfile']);
     $this->app->instance(Shell::class, $shell);
@@ -351,11 +352,12 @@ it('offers to commit the manifests it changed when the repo is inside a git chec
         ->expectsQuestion('Other, untracked: pick the ones to add to dotfiles', ['formula:jq'])
         ->expectsQuestion('Add Other items to which file?', 'Brewfile')
         ->expectsConfirmation('Apply these changes?', 'yes')
-        ->expectsOutputToContain('Brewfile | 1 +')
+        ->expectsOutputToContain('?? Brewfile')
+        ->doesntExpectOutputToContain('Already changed before this sync')
         ->expectsConfirmation('Commit these changes to your dotfiles?', 'yes')
         ->assertExitCode(0);
 
-    expect(array_map(fn (array $command) => $command[3], $shell->ran()))->toBe(['rev-parse', 'diff', 'add', 'commit'])
+    expect(array_map(fn (array $command) => $command[3], $shell->ran()))->toBe(['rev-parse', 'diff', 'status', 'add', 'commit'])
         ->and(file_get_contents("{$this->dir}/repo/Brewfile"))->toBe("brew \"jq\"\n")
         ->and(syncLog()['commit'])->toBe(['repo' => realpath("{$this->dir}/repo"), 'message' => 'dotsnitch: add jq']);
 });
@@ -390,7 +392,8 @@ it('offers to commit a file it adopted into the repo', function () {
     $git = ["{$this->dir}/brew/bin/git", '-C', $repo];
     $shell = (new FakeShell)
         ->expect([...$git, 'rev-parse', '--is-inside-work-tree'], "true\n")
-        ->expect([...$git, 'diff', '--stat', '--', '.zshrc'], " .zshrc | 2 +-\n")
+        ->expect([...$git, 'diff', '--name-only', '--relative', '-z', 'HEAD'], "notes.md\0.zshrc\0")
+        ->expect([...$git, 'status', '--short', '--untracked-files=all', '--', '.zshrc'], " M .zshrc\n")
         ->expect([...$git, 'add', '--', '.zshrc'])
         ->expect([...$git, 'commit', '-m', 'dotsnitch: adopt .zshrc', '--', '.zshrc']);
     $this->app->instance(Shell::class, $shell);
@@ -401,10 +404,11 @@ it('offers to commit a file it adopted into the repo', function () {
         ->expectsQuestion('How do you want to resolve it?', 'each')
         ->expectsQuestion("Symlinked config files, conflict: {$home}/.zshrc", 'adopt')
         ->expectsConfirmation('Apply these changes?', 'yes')
+        ->expectsOutputToContain('Already changed before this sync, and the commit takes those changes too: .zshrc')
         ->expectsConfirmation('Commit these changes to your dotfiles?', 'yes')
         ->assertExitCode(0);
 
-    expect(array_map(fn (array $command) => $command[3], $shell->ran()))->toBe(['rev-parse', 'diff', 'add', 'commit'])
+    expect(array_map(fn (array $command) => $command[3], $shell->ran()))->toBe(['rev-parse', 'diff', 'status', 'add', 'commit'])
         ->and(file_get_contents("{$repo}/.zshrc"))->toBe("home\n")
         ->and(readlink("{$home}/.zshrc"))->toBe("{$repo}/.zshrc");
 });

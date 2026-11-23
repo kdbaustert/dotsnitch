@@ -75,11 +75,12 @@ final class InitCommand extends Command
             return $this->failureReport();
         }
 
+        $uncommitted = $this->uncommittedFiles();
         $applied = $this->apply($changes);
         $this->showApplied(count($applied), count($changes));
 
         if ($applied !== []) {
-            $this->offerCommit($applied);
+            $this->offerCommit($applied, $uncommitted);
             $this->line('Run dotsnitch sync to compare them with this Mac from now on.');
         }
 

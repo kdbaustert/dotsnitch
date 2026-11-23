@@ -228,7 +228,7 @@ For each item you can add it to your dotfiles, install it, uninstall it, swap a 
 
 You always see the whole plan before anything runs. Uninstalls get their own yes or no, and it defaults to no.
 
-When it's done it scans again and saves the new report. If it edited files in a git checkout, it shows `git diff --stat` and offers to commit them. That defaults to no as well.
+When it's done it scans again and saves the new report. If it edited files in a git checkout, it shows `git status --short` for them and offers to commit them. That defaults to no as well. A file that already had uncommitted changes before the sync gets a warning first, since the commit takes those changes too.
 
 ### Undoing a sync
 

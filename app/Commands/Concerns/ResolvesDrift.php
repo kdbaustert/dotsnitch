@@ -98,12 +98,13 @@ trait ResolvesDrift
             return $this->failureReport();
         }
 
+        $uncommitted = $this->uncommittedFiles();
         $applied = $this->apply($confirmed);
         $this->showApplied(count($applied), count($confirmed));
 
         if ($applied !== []) {
             $this->saveRescan($reports, $applied);
-            $this->offerCommit($applied);
+            $this->offerCommit($applied, $uncommitted);
         }
 
         return $this->failureReport();
@@ -582,12 +583,41 @@ trait ResolvesDrift
     }
 
     /**
+     * Asked before the sync changes anything, so offerCommit() can say which files already held
+     * changes of yours. A repo with no commit yet has none.
+     *
+     * @return ?list<string> paths relative to the repo, null when git isn't installed or the repo
+     *                       isn't inside a git checkout
+     */
+    private function uncommittedFiles(): ?array
+    {
+        $git = $this->laravel->make(PathResolver::class)->find('git');
+
+        if ($git === null) {
+            return null;
+        }
+
+        $root = realpath($this->root) ?: $this->root;
+        $shell = $this->laravel->make(Shell::class);
+
+        // Asks git, since the dotfiles can be a folder inside a bigger checkout with no .git of its own.
+        if (! $shell->run([$git, '-C', $root, 'rev-parse', '--is-inside-work-tree'])->successful()) {
+            return null;
+        }
+
+        $diff = $shell->run([$git, '-C', $root, 'diff', '--name-only', '--relative', '-z', 'HEAD']);
+
+        return $diff->successful() ? array_values(array_filter(explode("\0", $diff->output))) : [];
+    }
+
+    /**
      * When the repo is inside a git checkout, shows what changed in it and offers to commit just
      * those files. Defaults to no.
      *
      * @param  list<Change>  $applied
+     * @param  ?list<string>  $uncommitted  from uncommittedFiles(), before the sync
      */
-    private function offerCommit(array $applied): void
+    private function offerCommit(array $applied, ?array $uncommitted): void
     {
         $root = realpath($this->root) ?: $this->root;
         $files = [];
@@ -600,18 +630,19 @@ trait ResolvesDrift
 
         $git = $this->laravel->make(PathResolver::class)->find('git');
 
-        if ($files === [] || $git === null) {
+        if ($files === [] || $uncommitted === null || $git === null) {
             return;
         }
 
         $shell = $this->laravel->make(Shell::class);
 
-        // Asks git, since the dotfiles can be a folder inside a bigger checkout with no .git of its own.
-        if (! $shell->run([$git, '-C', $root, 'rev-parse', '--is-inside-work-tree'])->successful()) {
-            return;
-        }
+        // Not diff --stat, which leaves out a file the sync created.
+        $this->line(rtrim($shell->run([$git, '-C', $root, 'status', '--short', '--untracked-files=all', '--', ...$files])->output));
+        $yours = array_values(array_intersect($files, $uncommitted));
 
-        $this->line(rtrim($shell->run([$git, '-C', $root, 'diff', '--stat', '--', ...$files])->output));
+        if ($yours !== []) {
+            $this->warn('Already changed before this sync, and the commit takes those changes too: '.implode(', ', $yours));
+        }
 
         if (! confirm('Commit these changes to your dotfiles?', default: false, hint: $this->commitMessage($applied))) {
             return;
