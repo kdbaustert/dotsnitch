@@ -101,7 +101,7 @@ Then compare your Brewfile with the Mac:
 dotsnitch --repo=~/dotfiles --checks=brew
 ```
 
-A scan only reads. Every brew call runs with `HOMEBREW_NO_AUTO_UPDATE=1`, so it won't update Homebrew on you, and it takes 2 to 3 seconds. Nothing changes until you confirm the plan. `--dry-run` shows you the plan and the exact commands without running any of them:
+A scan only reads. Every brew call runs with `HOMEBREW_NO_AUTO_UPDATE=1`, so it won't update Homebrew on you, and it takes about 2 seconds. Nothing changes until you confirm the plan. `--dry-run` shows you the plan and the exact commands without running any of them:
 
 ```sh
 dotsnitch --repo=~/dotfiles --checks=brew --dry-run

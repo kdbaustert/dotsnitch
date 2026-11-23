@@ -16,6 +16,7 @@ use App\Manifests\BrewfileLineFormat;
 use App\Manifests\LineListFormat;
 use App\Support\ManifestEditor;
 use App\Support\PathResolver;
+use App\Support\SideBySide;
 use App\Sync\Action;
 use App\Sync\Decision;
 use App\Sync\DriftItem;
@@ -84,22 +85,32 @@ abstract class PackageManagerTarget implements ComparesSides, SyncTarget
     abstract protected function uninstallCommand(Package $package): array;
 
     /**
-     * Base files and overlays are merged, so an entry in any of them counts as listed.
+     * Base files and overlays are merged, so an entry in any of them counts as listed. The
+     * manifests are read while the installed list is fetched, since a Brewfile needs brew for both.
      */
     public function scan(array $manifests, callable $log): DriftReport
     {
-        $entries = [];
+        [$entries, $installed] = SideBySide::run([
+            function () use ($manifests, $log) {
+                $entries = [];
 
-        foreach ($manifests as $manifest) {
-            $log('Reading '.basename($manifest));
-            $entries[$manifest] = $this->format($manifest)->read($manifest);
-            $log(basename($manifest)." lists {$entries[$manifest]->count()}");
-        }
+                foreach ($manifests as $manifest) {
+                    $log('Reading '.basename($manifest));
+                    $entries[$manifest] = $this->format($manifest)->read($manifest);
+                    $log(basename($manifest)." lists {$entries[$manifest]->count()}");
+                }
 
-        $log("Listing installed {$this->label()} packages");
-        $installed = $this->installed()->keyBy(fn (Package $package) => $package->key());
+                return $entries;
+            },
+            function () use ($log) {
+                $log("Listing installed {$this->label()} packages");
+                $installed = $this->installed()->keyBy(fn (Package $package) => $package->key());
+                $log("{$installed->count()} installed");
+
+                return $installed;
+            },
+        ]);
         $this->installedByKey = $installed->all();
-        $log("{$installed->count()} installed");
         /** @var Collection<string, Package> $listed */
         $listed = collect();
         $this->listedIn = [];

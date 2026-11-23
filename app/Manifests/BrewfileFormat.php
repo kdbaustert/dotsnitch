@@ -8,6 +8,7 @@ use App\Contracts\ManifestEdit;
 use App\Contracts\ManifestFormat;
 use App\Contracts\Shell;
 use App\Data\Package;
+use App\Support\SideBySide;
 use App\Targets\Homebrew;
 use Illuminate\Support\Collection;
 use RuntimeException;
@@ -30,23 +31,24 @@ final class BrewfileFormat implements ManifestFormat
     ) {}
 
     /**
+     * Asks for the three types at once, since each `brew bundle list` takes about 0.3s.
+     *
      * @throws RuntimeException when brew can't parse the file
      */
     public function read(string $path): Collection
     {
         $packages = collect();
-
-        foreach (self::TYPES as $type => $flag) {
+        $lists = SideBySide::run(array_map(fn (string $flag) => function () use ($path, $flag) {
             $result = $this->shell->run(
                 [$this->brew, 'bundle', 'list', "--file={$path}", $flag],
                 environment: Homebrew::ENVIRONMENT,
             );
 
-            if (! $result->successful()) {
-                throw new RuntimeException("brew couldn't read {$path}: ".trim($result->errorOutput));
-            }
+            return $result->successful() ? $result->output : throw new RuntimeException("brew couldn't read {$path}: ".trim($result->errorOutput));
+        }, self::TYPES));
 
-            foreach (array_filter(array_map(trim(...), explode("\n", $result->output))) as $name) {
+        foreach ($lists as $type => $output) {
+            foreach (array_filter(array_map(trim(...), explode("\n", $output))) as $name) {
                 $packages->push(new Package($name, $type));
             }
         }

@@ -296,13 +296,20 @@ final class PathResolver
         // The inherited fallback has no HOME when the process was started without one.
         $home = $environment['HOME'] ?? '';
 
+        // Asked at once, since composer and npm take a tenth of a second or more each.
+        [$composer, $npm, $pnpm, $uv] = SideBySide::run([
+            fn () => $this->lastLineOf(['composer', 'global', 'config', 'bin-dir', '--absolute'], $environment),
+            fn () => $this->npmBinDir($environment),
+            fn () => $this->lastLineOf(['pnpm', 'bin', '-g'], $environment),
+            fn () => $this->lastLineOf(['uv', 'tool', 'dir', '--bin'], $environment),
+        ]);
+
         $candidates = [
-            $this->lastLineOf(['composer', 'global', 'config', 'bin-dir', '--absolute'], $environment),
-            $this->npmBinDir($environment),
-            $this->lastLineOf(['pnpm', 'bin', '-g'], $environment)
-                ?? (isset($environment['PNPM_HOME']) ? $environment['PNPM_HOME'].'/bin' : null),
+            $composer,
+            $npm,
+            $pnpm ?? (isset($environment['PNPM_HOME']) ? $environment['PNPM_HOME'].'/bin' : null),
             "{$home}/.local/bin",
-            $this->lastLineOf(['uv', 'tool', 'dir', '--bin'], $environment),
+            $uv,
             ($environment['CARGO_HOME'] ?? "{$home}/.cargo").'/bin',
         ];
 

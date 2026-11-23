@@ -11,6 +11,7 @@ use App\Data\Package;
 use App\Support\JsonFile;
 use App\Support\ManifestEditor;
 use App\Support\PathResolver;
+use App\Support\SideBySide;
 use App\Sync\Action;
 use App\Sync\Decision;
 use App\Sync\DriftItem;
@@ -88,6 +89,9 @@ final class MacDefaults implements SyncTarget
         'com.apple.systemuiserver' => ['last-analytics-stamp'],
     ];
 
+    /** `defaults read` runs scan() starts at once. Each holds open pipes, and launchd allows a process 256 files. */
+    private const READS_AT_ONCE = 16;
+
     /** How many settings of a type one line can't write are named. Listing every setting finds dozens. */
     private const NAMED = 5;
 
@@ -139,10 +143,10 @@ final class MacDefaults implements SyncTarget
     }
 
     /**
-     * Reads every setting a line writes with its own `defaults read`, about 10 ms each, then all of
-     * SYSTEM_DOMAINS with one more, about half a second. A setting there that no line writes and
-     * that changed since the baseline is untracked. The first scan saves the baseline, so it finds
-     * none of those.
+     * Reads every setting a line writes with its own `defaults read`, about 10 ms each and
+     * READS_AT_ONCE at a time. All of SYSTEM_DOMAINS comes from one more, about half a second,
+     * read meanwhile. A setting there that no line writes and that changed since the baseline is
+     * untracked. The first scan saves the baseline, so it finds none of those.
      *
      * @throws RuntimeException when defaults can't read every setting, or the baseline can't be saved
      */
@@ -150,20 +154,17 @@ final class MacDefaults implements SyncTarget
     {
         $this->forget();
         $writes = $this->writesInEach($manifests, $log);
+        [$values, $now] = SideBySide::run([fn () => $this->currentValues($writes), $this->snapshot(...)]);
         $items = [];
 
-        foreach ($writes as $write) {
-            $current = $this->shell->run([$this->defaults(), 'read', $write['domain'], $write['key']]);
-            $value = rtrim($current->output, "\n");
-
-            if ($current->successful() && $this->matches($write, $value)) {
+        foreach ($writes as $setting => $write) {
+            if ($values[$setting] !== null && $this->matches($write, $values[$setting])) {
                 continue;
             }
 
-            $items[] = $this->differs($write, $current->successful() ? $value : null);
+            $items[] = $this->differs($write, $values[$setting]);
         }
 
-        $now = $this->snapshot();
         $baseline = $this->savedBaseline();
 
         if ($baseline === null) {
@@ -330,6 +331,25 @@ final class MacDefaults implements SyncTarget
         }
 
         return $items;
+    }
+
+    /**
+     * @param  array<string, array{domain: string, key: string}>  $writes
+     * @return array<string, ?string> what `defaults read` printed for each, keyed like $writes; null when it isn't set
+     */
+    private function currentValues(array $writes): array
+    {
+        $values = [];
+
+        foreach (array_chunk($writes, self::READS_AT_ONCE, preserve_keys: true) as $chunk) {
+            $values += SideBySide::run(array_map(fn (array $write) => function () use ($write) {
+                $current = $this->shell->run([$this->defaults(), 'read', $write['domain'], $write['key']]);
+
+                return $current->successful() ? rtrim($current->output, "\n") : null;
+            }, $chunk));
+        }
+
+        return $values;
     }
 
     /**
