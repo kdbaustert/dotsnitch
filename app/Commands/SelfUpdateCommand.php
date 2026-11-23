@@ -6,6 +6,7 @@ namespace App\Commands;
 
 use App\Support\SelfPath;
 use App\Support\SelfUpdate;
+use ErrorException;
 use LaravelZero\Framework\Commands\Command;
 use RuntimeException;
 
@@ -39,15 +40,15 @@ final class SelfUpdateCommand extends Command
 
         $running = config('app.version');
 
-        if (spin(fn () => $update->releaseIsOlderThan($running), 'Asking for the latest release…')) {
-            $this->info("This is {$running}, which is newer than the latest release, so there's nothing to install.");
-
-            return self::SUCCESS;
-        }
-
         try {
+            if (spin(fn () => $update->releaseIsOlderThan($running), 'Asking for the latest release…')) {
+                $this->info("This is {$running}, which is newer than the latest release, so there's nothing to install.");
+
+                return self::SUCCESS;
+            }
+
             $updated = spin(fn () => $update->update($command[0]), 'Downloading the latest release…');
-        } catch (RuntimeException $e) {
+        } catch (RuntimeException|ErrorException $e) {
             $this->error($e->getMessage());
 
             return self::FAILURE;

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Contracts\Shell;
+use App\Data\ProcessResult;
 use App\Support\ProcessShell;
 use App\Support\SelfUpdate;
 
@@ -57,6 +59,30 @@ it('keeps the old binary when the release can\'t be reached', function () {
 
     expect(fn () => $update->update($this->binary))->toThrow(RuntimeException::class, 'The download failed: ')
         ->and(file_get_contents($this->binary))->toBe('old');
+});
+
+it('removes what it got of a download that broke off', function () {
+    // Real curl for the checksums, and a transfer that stops partway for the build.
+    $shell = new class implements Shell
+    {
+        public function run(array $command, ?int $timeout = 120, array $environment = []): ProcessResult
+        {
+            $output = array_search('-o', $command, true);
+
+            if ($output === false) {
+                return (new ProcessShell)->run($command, $timeout, $environment);
+            }
+
+            file_put_contents($command[$output + 1], 'ne');
+
+            return new ProcessResult(18, '', 'curl: (18) end of response with 1 bytes missing');
+        }
+    };
+    $update = new SelfUpdate($shell, "file://{$this->dir}/release");
+
+    expect(fn () => $update->update($this->binary))->toThrow(RuntimeException::class, 'The download failed: curl: (18)')
+        ->and(file_get_contents($this->binary))->toBe('old')
+        ->and(file_exists("{$this->dir}/bin/.dotsnitch.new"))->toBeFalse();
 });
 
 it('throws when the release lists no checksum for this Mac', function () {

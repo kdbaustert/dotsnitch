@@ -40,18 +40,22 @@ final class SelfUpdate
         }
 
         $download = dirname($binary).'/.dotsnitch.new';
-        $this->curl(['-o', $download, "{$this->releases}/{$asset}"]);
 
-        if (hash_file('sha256', $download) !== $expected) {
-            unlink($download);
+        // curl leaves what it got of a download that broke off, and the next run would find it.
+        try {
+            $this->curl(['-o', $download, "{$this->releases}/{$asset}"]);
 
-            throw new RuntimeException("{$asset} doesn't match its checksum, so nothing was installed.");
-        }
+            if (hash_file('sha256', $download) !== $expected) {
+                throw new RuntimeException("{$asset} doesn't match its checksum, so nothing was installed.");
+            }
 
-        if (! @chmod($download, 0755) || ! @rename($download, $binary)) {
-            @unlink($download);
-
-            throw new RuntimeException("Couldn't replace {$binary}.");
+            if (! @chmod($download, 0755) || ! @rename($download, $binary)) {
+                throw new RuntimeException("Couldn't replace {$binary}.");
+            }
+        } finally {
+            if (is_file($download)) {
+                @unlink($download);
+            }
         }
 
         return true;
