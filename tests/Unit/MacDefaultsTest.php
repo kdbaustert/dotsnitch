@@ -160,6 +160,19 @@ it('fills in an unquoted ~, and leaves a quoted one as it is', function () {
     expect($items)->toBe([]);
 });
 
+it('undoes only the backslashes the shell undoes inside double quotes', function () {
+    $this->shell
+        ->expect([$this->defaults, 'read', 'com.example.app', 'folder'], "C:\\new\\temp\n")
+        ->expect([$this->defaults, 'read', 'com.example.app', 'greeting'], "say \"hi\" \\o/\n");
+
+    $items = scanDefaults($this,
+        'defaults write com.example.app folder -string "C:\new\temp"',
+        'defaults write com.example.app greeting -string "say \"hi\" \\\\o/"',
+    );
+
+    expect($items)->toBe([]);
+});
+
 it('goes by a later file\'s line for a key an earlier file writes too', function () {
     $overlay = "{$this->script}.work";
     file_put_contents($this->script, "defaults write com.apple.dock tilesize -int 33\n");

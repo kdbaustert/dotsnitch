@@ -35,3 +35,13 @@ it('steps aside inside a fiber while its jobs wait', function () {
 it('throws what a job throws', function () {
     SideBySide::run([fn () => throw new RuntimeException('boom')]);
 })->throws(RuntimeException::class, 'boom');
+
+it('stops the commands the other jobs were waiting on when a job throws', function () {
+    $sleep = fn () => (new ProcessShell)->run(['sh', '-c', 'sleep 7.29'])->output;
+
+    expect(fn () => SideBySide::run([$sleep, fn () => throw new RuntimeException('boom')]))
+        ->toThrow(RuntimeException::class, 'boom');
+
+    exec("pgrep -f 'sleep 7.29'", $running);
+    expect($running)->toBe([]);
+});

@@ -37,6 +37,24 @@ it('reads each domain and key, with every line of a value that spans lines', fun
     ]);
 });
 
+it('turns the \U escapes in a quoted name back into the letters they stand for', function () {
+    $dump = <<<'DUMP'
+        {
+            "com.example.caf\U00e9" =     {
+                "smile \Ud83d\Ude00" = 1;
+                "C:\\U00e9" = 2;
+            };
+        }
+        DUMP;
+
+    expect(DefaultsSnapshot::parse($dump)->settings)->toBe([
+        "com.example.caf\u{e9}" => [
+            "smile \u{1F600}" => '1;',
+            'C:\U00e9' => '2;',
+        ],
+    ]);
+});
+
 it('lists the settings that are new or print differently, and not the deleted ones', function () {
     $before = DefaultsSnapshot::parse(DEFAULTS_DUMP);
     $after = DefaultsSnapshot::parse(str_replace(

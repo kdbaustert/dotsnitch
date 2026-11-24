@@ -113,6 +113,17 @@ final readonly class DefaultsSnapshot
 
     private static function unquote(string $name): string
     {
-        return str_starts_with($name, '"') ? stripcslashes(substr($name, 1, -1)) : $name;
+        if (! str_starts_with($name, '"')) {
+            return $name;
+        }
+
+        // \Uxxxx is a UTF-16 unit, and an emoji takes two in a row. stripcslashes knows the rest.
+        return (string) preg_replace_callback(
+            '/(?:\\\\U[0-9a-fA-F]{4})+|\\\\(?:[0-7]{1,3}|.)/',
+            fn (array $escape) => str_starts_with($escape[0], '\\U')
+                ? json_decode('"'.str_replace('\\U', '\\u', $escape[0]).'"') ?? $escape[0]
+                : stripcslashes($escape[0]),
+            substr($name, 1, -1),
+        );
     }
 }

@@ -558,7 +558,9 @@ final class MacDefaults implements SyncTarget
                 return [];
             }
 
-            $words[] = $double === null ? $word : stripcslashes($word);
+            // Inside double quotes only \\ and \" are left to undo, since a line with $ or a backtick
+            // was turned away above. Any other backslash stays, as it does in the shell.
+            $words[] = $double === null ? $word : strtr($word, ['\\\\' => '\\', '\\"' => '"']);
         }
 
         return $words;

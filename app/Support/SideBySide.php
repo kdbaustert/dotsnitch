@@ -6,6 +6,7 @@ namespace App\Support;
 
 use Closure;
 use Fiber;
+use Throwable;
 
 /**
  * Runs jobs at once, each in a fiber that steps aside while one of its commands runs (see
@@ -28,18 +29,27 @@ final class SideBySide
     {
         $fibers = array_map(fn (Closure $job) => new Fiber($job), $jobs);
 
-        foreach ($fibers as $fiber) {
-            $fiber->start();
-        }
-
-        while (array_filter($fibers, fn (Fiber $fiber) => ! $fiber->isTerminated()) !== []) {
-            Fiber::getCurrent() === null ? usleep(self::POLL_MICROSECONDS) : Fiber::suspend();
-
+        try {
             foreach ($fibers as $fiber) {
-                if ($fiber->isSuspended()) {
-                    $fiber->resume();
+                $fiber->start();
+            }
+
+            while (array_filter($fibers, fn (Fiber $fiber) => ! $fiber->isTerminated()) !== []) {
+                Fiber::getCurrent() === null ? usleep(self::POLL_MICROSECONDS) : Fiber::suspend();
+
+                foreach ($fibers as $fiber) {
+                    if ($fiber->isSuspended()) {
+                        $fiber->resume();
+                    }
                 }
             }
+        } catch (Throwable $error) {
+            // A job left waiting on a command holds a cycle, so its fiber, and the Process that
+            // stops the command when it goes, would last until PHP next collects cycles.
+            unset($fiber, $fibers);
+            gc_collect_cycles();
+
+            throw $error;
         }
 
         return array_map(fn (Fiber $fiber) => $fiber->getReturn(), $fibers);
