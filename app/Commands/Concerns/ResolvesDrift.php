@@ -801,7 +801,7 @@ trait ResolvesDrift
     }
 
     /**
-     * Such as "dotsnitch: add jq, remove mpv, replace youtube-dl, adopt .zshrc".
+     * Such as "Add jq, remove mpv, replace youtube-dl, adopt .zshrc".
      *
      * @param  list<Change>  $applied
      */
@@ -825,7 +825,7 @@ trait ResolvesDrift
             }
         }
 
-        return 'dotsnitch: '.implode(', ', $parts);
+        return ucfirst(implode(', ', $parts));
     }
 
     /**

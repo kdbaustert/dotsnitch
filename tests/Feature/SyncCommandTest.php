@@ -344,7 +344,7 @@ it('offers to commit the manifests it changed when the repo is inside a git chec
         ->expect([...$git, 'diff', '--name-only', '--relative', '-z', 'HEAD'])
         ->expect([...$git, 'status', '--short', '--untracked-files=all', '--', 'Brewfile'], "?? Brewfile\n")
         ->expect([...$git, 'add', '--', 'Brewfile'])
-        ->expect([...$git, 'commit', '-m', 'dotsnitch: add jq', '--', 'Brewfile']);
+        ->expect([...$git, 'commit', '-m', 'Add jq', '--', 'Brewfile']);
     $this->app->instance(Shell::class, $shell);
 
     $this->artisan('sync', ['--repo' => "{$this->dir}/repo", '--checks' => 'other'])
@@ -429,7 +429,7 @@ it('offers to commit a file it adopted into the repo', function () {
         ->expect([...$git, 'diff', '--name-only', '--relative', '-z', 'HEAD'], "notes.md\0.zshrc\0")
         ->expect([...$git, 'status', '--short', '--untracked-files=all', '--', '.zshrc'], " M .zshrc\n")
         ->expect([...$git, 'add', '--', '.zshrc'])
-        ->expect([...$git, 'commit', '-m', 'dotsnitch: adopt .zshrc', '--', '.zshrc']);
+        ->expect([...$git, 'commit', '-m', 'Adopt .zshrc', '--', '.zshrc']);
     $this->app->instance(Shell::class, $shell);
     $this->app->instance(Symlinks::class, new Symlinks(app(DotfilesRepo::class), $shell, app(ManifestEditor::class), ['HOME' => $home]));
     answerWithQuestions();
