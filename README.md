@@ -210,7 +210,7 @@ It only looks at the domains System Settings, the Dock, Finder and the menu bar 
 
 This check needs no manifest. When your dotfiles are a git checkout it reports:
 
-- **uncommitted:** files changed or new in the working tree. There's nothing to pick here, since what goes in a commit is your call.
+- **uncommitted:** each file changed, new or deleted under the dotfiles folder, one item per file. Commit stages it with `git add`, and once everything else has run, sync asks for a message and commits every file you picked in one commit.
 - **unpushed:** commits the branch has that its upstream doesn't. Push runs `git push`.
 - **behind:** commits the remote has that you don't. Pull runs `git pull --ff-only`, so it stops when the branches have split.
 

@@ -22,10 +22,11 @@ use RuntimeException;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 
 /**
- * Checks the dotfiles repo itself: changes nobody committed, commits nobody pushed, and commits
- * on the remote this Mac hasn't pulled. Each is about the branch that's checked out, and reads as
- * worktree:main, local:main or remote:main, so ignoring unpushed commits doesn't hide the ones
- * to pull. Uncommitted changes can only be skipped.
+ * Checks the dotfiles repo itself: files nobody committed, commits nobody pushed, and commits
+ * on the remote this Mac hasn't pulled. Each changed file is its own item, such as
+ * file:zsh/.zshrc, so you pick which ones to commit. The other two are about the branch that's
+ * checked out, and read as local:main or remote:main, so ignoring unpushed commits doesn't hide
+ * the ones to pull.
  */
 final class RepoState implements ScansWholeRepo, SyncTarget
 {
@@ -38,8 +39,9 @@ final class RepoState implements ScansWholeRepo, SyncTarget
      */
     private const NO_PROMPT = ['GIT_TERMINAL_PROMPT' => '0', 'SSH_ASKPASS' => '/usr/bin/false', 'SSH_ASKPASS_REQUIRE' => 'force'];
 
-    /** What each kind of drift offers before Skip. Committing is left to you. */
+    /** What each kind of drift offers before Skip. */
     private const ACTIONS = [
+        DriftKind::Uncommitted->value => [Action::Commit],
         DriftKind::Unpushed->value => [Action::Push, Action::Ignore],
         DriftKind::Behind->value => [Action::Pull, Action::Ignore],
     ];
@@ -85,7 +87,10 @@ final class RepoState implements ScansWholeRepo, SyncTarget
      */
     public function scan(array $manifests, callable $log): DriftReport
     {
-        if (! $this->git(['rev-parse', '--git-dir'])->successful()) {
+        // Empty at the top of the checkout, and "dotfiles/" for a folder inside a bigger one.
+        $prefix = $this->git(['rev-parse', '--show-prefix']);
+
+        if (! $prefix->successful()) {
             $log("{$this->repo->root()} isn't a git repository");
 
             return new DriftReport($this->key());
@@ -93,10 +98,9 @@ final class RepoState implements ScansWholeRepo, SyncTarget
 
         $branch = trim($this->git(['symbolic-ref', '--short', '-q', 'HEAD'])->output) ?: 'HEAD';
         $items = [];
-        $changed = count($this->changedFiles());
 
-        if ($changed > 0) {
-            $items[] = $this->item(DriftKind::Uncommitted, new Package($branch, 'worktree'), $changed === 1 ? '1 file' : "{$changed} files");
+        foreach ($this->changedFiles(trim($prefix->output)) as $path => $change) {
+            $items[] = $this->item(DriftKind::Uncommitted, new Package($path, 'file'), $change);
         }
 
         [$remote, $remoteRef, $tracking] = $this->upstreamOf($branch);
@@ -132,11 +136,14 @@ final class RepoState implements ScansWholeRepo, SyncTarget
     }
 
     /**
-     * A pull only fast-forwards, so it stops when the two sides have each moved on.
+     * A commit only stages the file here, and sync commits every file you picked in one go once
+     * the rest has run. A pull only fast-forwards, so it stops when the two sides have each moved
+     * on.
      */
     public function steps(Decision $decision): array
     {
         return match ($decision->action) {
+            Action::Commit => [$this->commandStep(['add', '--', $decision->item->subject->name])],
             Action::Push => [$this->commandStep(['push'])],
             Action::Pull => [$this->commandStep(['pull', '--ff-only'])],
             Action::Ignore, Action::Skip => [],
@@ -145,19 +152,36 @@ final class RepoState implements ScansWholeRepo, SyncTarget
     }
 
     /**
-     * @return list<string> one line of git status per changed or untracked file
+     * Only the files under the dotfiles folder. Renames read as a deleted file and a new one, so
+     * committing one path never leaves the other half behind.
+     *
+     * @param  string  $prefix  the folder's path inside the checkout, from rev-parse --show-prefix
+     * @return array<string, string> "new", "deleted" or "changed", keyed by the path relative to
+     *                               the dotfiles folder
      *
      * @throws RuntimeException when git status fails
      */
-    private function changedFiles(): array
+    private function changedFiles(string $prefix): array
     {
-        $status = $this->git(['status', '--porcelain']);
+        $status = $this->git(['status', '--porcelain', '-z', '--untracked-files=all', '--no-renames', '--', '.']);
 
         if (! $status->successful()) {
             throw new RuntimeException('git status failed: '.trim($status->errorOutput));
         }
 
-        return array_values(array_filter(explode("\n", $status->output), fn (string $line) => $line !== ''));
+        $files = [];
+
+        // Each entry is two status letters, a space and the path from the top of the checkout.
+        foreach (array_filter(explode("\0", $status->output)) as $entry) {
+            $code = substr($entry, 0, 2);
+            $files[substr($entry, 3 + strlen($prefix))] = match (true) {
+                $code === '??', str_contains($code, 'A') => 'new',
+                str_contains($code, 'D') => 'deleted',
+                default => 'changed',
+            };
+        }
+
+        return $files;
     }
 
     /**
@@ -200,9 +224,9 @@ final class RepoState implements ScansWholeRepo, SyncTarget
         return ! $this->git(['merge-base', '--is-ancestor', $commit, 'HEAD'])->successful();
     }
 
-    private function item(DriftKind $kind, Package $branch, string $detail): DriftItem
+    private function item(DriftKind $kind, Package $subject, string $detail): DriftItem
     {
-        return new DriftItem($this->key(), $kind, $branch, $detail);
+        return new DriftItem($this->key(), $kind, $subject, $detail);
     }
 
     /**

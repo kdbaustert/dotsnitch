@@ -359,7 +359,41 @@ it('offers to commit the manifests it changed when the repo is inside a git chec
 
     expect(array_map(fn (array $command) => $command[3], $shell->ran()))->toBe(['rev-parse', 'diff', 'status', 'add', 'commit'])
         ->and(file_get_contents("{$this->dir}/repo/Brewfile"))->toBe("brew \"jq\"\n")
-        ->and(syncLog()['commit'])->toBe(['repo' => realpath("{$this->dir}/repo"), 'message' => 'dotsnitch: add jq']);
+        ->and(syncLog()['commit'])->toBe(['repo' => realpath("{$this->dir}/repo"), 'message' => 'Add jq']);
+});
+
+it('commits the dotfiles files you pick one by one in a single commit', function () {
+    // Real git, so the commit can be read back. Its global config, and any signing, stays out.
+    putenv('GIT_CONFIG_GLOBAL=/dev/null');
+    putenv('GIT_CONFIG_SYSTEM=/dev/null');
+    file_put_contents("{$this->dir}/brew/bin/git", "#!/bin/sh\nexec /usr/bin/git \"\$@\"\n");
+    chmod("{$this->dir}/brew/bin/git", 0755);
+    $repo = realpath("{$this->dir}/repo");
+    $git = fn (string ...$arguments) => exec(implode(' ', array_map(escapeshellarg(...), ['/usr/bin/git', '-C', $repo, ...$arguments])), $output);
+
+    foreach ([['init', '-q', '-b', 'main'], ['config', 'user.name', 'Test'], ['config', 'user.email', 'test@example.com'], ['add', 'Brewfile'], ['commit', '-q', '-m', 'Start']] as $arguments) {
+        $git(...$arguments);
+    }
+
+    file_put_contents("{$repo}/Brewfile", "brew \"jq\"\n");
+    touch("{$repo}/notes.md");
+    answerWithQuestions();
+
+    $this->artisan('sync', ['--repo' => $repo, '--checks' => 'repo'])
+        ->expectsQuestion('How do you want to resolve it?', 'each')
+        ->expectsQuestion('Dotfiles repo, uncommitted: file:Brewfile', 'commit')
+        ->expectsQuestion('Dotfiles repo, uncommitted: file:notes.md', 'skip')
+        ->expectsOutputToContain("-C {$repo} add -- Brewfile")
+        ->expectsConfirmation('Apply these changes?', 'yes')
+        ->expectsQuestion('Commit message', 'Add jq')
+        ->assertExitCode(0);
+
+    putenv('GIT_CONFIG_GLOBAL');
+    putenv('GIT_CONFIG_SYSTEM');
+
+    expect($git('log', '-1', '--format=%s'))->toBe('Add jq')
+        ->and($git('status', '--porcelain'))->toBe('?? notes.md')
+        ->and(syncLog()['commit'])->toBe(['repo' => $repo, 'message' => 'Add jq']);
 });
 
 it("doesn't offer a commit when the repo isn't in a git checkout", function () {

@@ -21,6 +21,7 @@ enum Action: string
     case RepointAndBackUp = 'repoint-backup';
     case Unlink = 'unlink';
     case ShowDiff = 'diff';
+    case Commit = 'commit';
     case Push = 'push';
     case Pull = 'pull';
     case Write = 'write';
@@ -47,6 +48,7 @@ enum Action: string
             self::RepointAndBackUp => 'Repoint and back up what it pointed at',
             self::Unlink => 'Remove link',
             self::ShowDiff => 'Show diff',
+            self::Commit => 'Commit',
             self::Push => 'Push',
             self::Pull => 'Pull',
             self::Write => 'Write to this Mac',

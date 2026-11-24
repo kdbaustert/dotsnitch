@@ -41,6 +41,7 @@ beforeEach(function () {
     $login = (new FakeShell)->expect(['/bin/zsh', '+m', '-lic', 'printf __DOTSNITCH_ENV__; /usr/bin/env -0'], exitCode: 1);
     $repo = new DotfilesRepo($settings, $inherited);
     $repo->resolve($this->root);
+    $this->repo = $repo;
     $this->state = new RepoState($repo, new ProcessShell, new PathResolver($login, $settings, $inherited));
 });
 
@@ -109,7 +110,35 @@ it('reports changes that are not committed and commits that are not pushed', fun
     file_put_contents("{$this->root}/Brewfile", "brew \"jq\"\n");
     touch("{$this->root}/new.txt");
 
-    expect(repoDrift())->toBe(['uncommitted worktree:main (2 files)', 'unpushed local:main (2 commits)']);
+    expect(repoDrift())->toBe(['uncommitted file:Brewfile (changed)', 'uncommitted file:new.txt (new)', 'unpushed local:main (2 commits)']);
+});
+
+it('reports a rename as a deleted file and a new one', function () {
+    gitIn($this->root, 'mv', 'Brewfile', 'Brewfile.old');
+
+    expect(repoDrift())->toBe(['uncommitted file:Brewfile (deleted)', 'uncommitted file:Brewfile.old (new)']);
+});
+
+it('reports only the files in a dotfiles folder inside a bigger checkout, relative to it', function () {
+    mkdir("{$this->root}/home");
+    touch("{$this->root}/home/.zshrc");
+    touch("{$this->root}/outside.txt");
+    $this->repo->resolve("{$this->root}/home");
+
+    expect(repoDrift())->toBe(['uncommitted file:.zshrc (new)']);
+});
+
+it('stages a file to commit', function () {
+    mkdir("{$this->root}/home");
+    touch("{$this->root}/home/.zshrc");
+    $this->repo->resolve("{$this->root}/home");
+    repoDrift();
+    [$add] = $this->state->steps(new Decision($this->items[0], Action::Commit));
+    ($add->run)();
+    exec('/usr/bin/git -C '.escapeshellarg($this->root).' diff --cached --name-only', $staged);
+
+    expect($add->description)->toBe("/usr/bin/git -C {$this->root}/home add -- .zshrc")
+        ->and($staged)->toBe(['home/.zshrc']);
 });
 
 it('reports a remote that has moved on, without fetching', function () {
@@ -147,14 +176,14 @@ it('throws git\'s error when a pull can\'t fast-forward', function () {
     expect(fn () => ($pull->run)())->toThrow(RuntimeException::class);
 });
 
-it('offers a push or a pull, and leaves committing to you', function () {
+it('offers a commit, a push or a pull', function () {
     pushFromAnotherMac();
     commitFile($this->root, 'cargo.txt');
     touch("{$this->root}/new.txt");
     repoDrift();
 
     expect(array_map(fn (DriftItem $item) => array_keys($this->state->actionsFor($item)), $this->items))->toBe([
-        ['skip'],
+        ['commit', 'skip'],
         ['push', 'ignore', 'skip'],
         ['pull', 'ignore', 'skip'],
     ]);
@@ -164,7 +193,7 @@ it('carries on when the remote can\'t be reached', function () {
     touch("{$this->root}/new.txt");
     gitIn($this->root, 'remote', 'set-url', 'origin', "{$this->dir}/gone.git");
 
-    expect(repoDrift())->toBe(['uncommitted worktree:main (1 file)'])
+    expect(repoDrift())->toBe(['uncommitted file:new.txt (new)'])
         ->and($this->log)->toBe(["Couldn't read refs/heads/main from origin, so pulls weren't checked"]);
 });
 

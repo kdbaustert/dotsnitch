@@ -10,6 +10,7 @@ use App\Contracts\ShowsDiff;
 use App\Contracts\SyncTarget;
 use App\Data\Check;
 use App\Data\Link;
+use App\Data\Package;
 use App\Support\ManifestEditor;
 use App\Support\Manifests;
 use App\Support\PathResolver;
@@ -36,7 +37,9 @@ use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\multiselect;
 use function Laravel\Prompts\progress;
 use function Laravel\Prompts\select;
+use function Laravel\Prompts\spin;
 use function Laravel\Prompts\table;
+use function Laravel\Prompts\text;
 
 /**
  * Turns drift into decisions, shows the plan, and runs it. Call resolve() after ScansChecks has
@@ -97,9 +100,14 @@ trait ResolvesDrift
         $this->showSteps($confirmed);
         $secrets = $this->secretsIn($this->adoptedPaths($confirmed));
         $this->warnAboutSecrets($secrets, 'Adopting moves them into your dotfiles repo, so a commit or push takes them along.');
+        $root = realpath($this->root) ?: $this->root;
+        // A deleted file has nothing left to scan.
+        $committing = array_values(array_filter(array_map(fn (string $path) => "{$root}/{$path}", $this->pickedToCommit($confirmed)), is_file(...)));
+        $committedSecrets = $this->secretsIn($committing);
+        $this->warnAboutSecrets($committedSecrets, 'A commit keeps them in the history, even after you delete them.', $root);
 
         // A change that couldn't be planned still fails the run after a no.
-        if (! confirm('Apply these changes?', default: $secrets === [])) {
+        if (! confirm('Apply these changes?', default: $secrets === [] && $committedSecrets === [])) {
             return $this->failureReport();
         }
 
@@ -108,6 +116,7 @@ trait ResolvesDrift
         $this->showApplied(count($applied), count($confirmed));
 
         if ($applied !== []) {
+            $this->commitPicked($applied);
             $this->saveRescan($reports, $applied);
             $this->offerCommit($applied, $uncommitted);
         }
@@ -659,17 +668,75 @@ trait ResolvesDrift
             return;
         }
 
-        foreach ([['add', '--', ...$files], ['commit', '-m', $this->commitMessage($applied), '--', ...$files]] as $arguments) {
+        if ($this->commitPaths($git, $root, $files, $this->commitMessage($applied))) {
+            $this->laravel->make(SyncLog::class)->committed($root, $this->commitMessage($applied));
+        }
+    }
+
+    /**
+     * Commits the files you picked from the dotfiles repo check in one commit, with the message
+     * you give. Their steps only staged them.
+     *
+     * @param  list<Change>  $applied
+     */
+    private function commitPicked(array $applied): void
+    {
+        $paths = $this->pickedToCommit($applied);
+        $git = $this->laravel->make(PathResolver::class)->find('git');
+
+        if ($paths === [] || $git === null) {
+            return;
+        }
+
+        $root = realpath($this->root) ?: $this->root;
+        $count = count($paths) === 1 ? '1 file' : count($paths).' files';
+        $message = text('Commit message', default: "Commit {$count}", required: true);
+
+        if ($this->commitPaths($git, $root, $paths, $message)) {
+            $this->laravel->make(SyncLog::class)->committed($root, $message);
+        }
+    }
+
+    /**
+     * @param  list<Change>  $changes
+     * @return list<string> paths relative to the dotfiles folder
+     */
+    private function pickedToCommit(array $changes): array
+    {
+        $paths = [];
+
+        foreach ($changes as $change) {
+            $subject = $change->decision->item->subject;
+
+            if ($change->decision->action === Action::Commit && $subject instanceof Package) {
+                $paths[] = $subject->name;
+            }
+        }
+
+        return $paths;
+    }
+
+    /**
+     * Adds a git error to the failures listed at the end.
+     *
+     * @param  list<string>  $paths  relative to $root
+     * @return bool false when git add or commit failed
+     */
+    private function commitPaths(string $git, string $root, array $paths, string $message): bool
+    {
+        $shell = $this->laravel->make(Shell::class);
+
+        foreach ([['add', '--', ...$paths], ['commit', '-m', $message, '--', ...$paths]] as $arguments) {
             $result = $shell->run([$git, '-C', $root, ...$arguments]);
 
             if (! $result->successful()) {
                 $this->failures[] = "git {$arguments[0]}: ".(trim($result->errorOutput) ?: trim($result->output));
 
-                return;
+                return false;
             }
         }
 
-        $this->laravel->make(SyncLog::class)->committed($root, $this->commitMessage($applied));
+        return true;
     }
 
     /**
@@ -699,9 +766,14 @@ trait ResolvesDrift
      */
     private function secretsIn(array $paths): array
     {
+        if ($paths === []) {
+            return [];
+        }
+
         $scanner = $this->laravel->make(SecretScanner::class);
 
-        return array_merge(...array_map($scanner->scan(...), $paths));
+        // A big folder can take seconds: 20,000 files took 0.6s here.
+        return spin(fn () => array_merge(...array_map($scanner->scan(...), $paths)), 'Looking for secrets…');
     }
 
     /**
